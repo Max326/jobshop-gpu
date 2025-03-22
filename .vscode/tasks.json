@@ -1,0 +1,19 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build-cuda",
+            "type": "shell",
+            "command": "nvcc",
+            "args": [
+                "-o", "${workspaceFolder}/build/${fileBasenameNoExtension}", "${workspaceFolder}/src/${fileBasename}"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [],
+            "detail": "Kompilacja programu CUDA"
+        }
+    ]
+}
