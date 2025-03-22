@@ -6,6 +6,7 @@
             "type": "shell",
             "command": "nvcc",
             "args": [
+                "-Wno-deprecated-gpu-targets",
                 "-o", "${workspaceFolder}/build/${fileBasenameNoExtension}", "${workspaceFolder}/src/${fileBasename}"
             ],
             "group": {
