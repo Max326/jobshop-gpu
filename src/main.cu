@@ -1,21 +1,21 @@
-#include "NeuralNetwork.h"
 #include <iostream>
 
-int main()
-{
-    // Przykładowa topologia: warstwa wejściowa (2 neurony), ukryta (3 neurony), wyjściowa (1 neuron)
-    std::vector<int> topology = {6, 3, 1};
-    NeuralNetwork network(topology);
+#include "NeuralNetwork.h"
 
-    // Przykładowe dane wejściowe
-    std::vector<float> input = {1.0f, 2.5f, 3.0f, -0.5f, -0.6f, 1.3f};
-    std::vector<float> output;
+int main() {
+	// Przykładowa topologia: warstwa wejściowa (2 neurony), ukryta (3 neurony), wyjściowa (1 neuron)
+	std::vector<int> topology = {6, 3, 1};
+	NeuralNetwork network(topology);
 
-    // Propagacja w przód
-    network.Forward(input, output);
+	// Przykładowe dane wejściowe
+	std::vector<float> input = {1.0f, 2.5f, 3.0f, -0.5f, -0.6f, 1.3f};
+	std::vector<float> output;
 
-    // Wynik
-    std::cout << "Output: " << output[0] << std::endl;
+	// Propagacja w przód
+	network.Forward(input, output);
 
-    return 0;
+	// Wynik
+	std::cout << "Output: " << output[0] << std::endl;
+
+	return 0;
 }
