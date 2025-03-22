@@ -11,4 +11,6 @@ nvcc -o NeuralNetwork main.cu NeuralNetwork.cu
 ```
 
 To run:
-`./NeuralNetwork`
+```
+./NeuralNetwork
+```
