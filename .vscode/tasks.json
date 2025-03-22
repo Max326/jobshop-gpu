@@ -1,20 +1,24 @@
 {
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "build-cuda",
-            "type": "shell",
-            "command": "nvcc",
-            "args": [
-                "-Wno-deprecated-gpu-targets",
-                "-o", "${workspaceFolder}/build/${fileBasenameNoExtension}", "${workspaceFolder}/src/${fileBasename}"
-            ],
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            },
-            "problemMatcher": [],
-            "detail": "Kompilacja programu CUDA"
-        }
-    ]
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "nvcc",
+      "args": [
+        "-Wno-deprecated-gpu-targets",
+        "-g", // Włącz debugowanie
+        "-G", // Włącz debugowanie CUDA
+        "-o", "${workspaceFolder}/NeuralNetwork", // Plik wykonywalny w głównym katalogu
+        "${workspaceFolder}/src/main.cu", // Pliki źródłowe z katalogu src
+        "${workspaceFolder}/src/NeuralNetwork.cu"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$gcc"],
+      "detail": "Kompilacja projektu CUDA"
+    }
+  ]
 }
