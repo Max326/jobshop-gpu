@@ -8,12 +8,12 @@ To compile:
 
 ```bash
 cd src
-nvcc -o NeuralNetwork main.cu NeuralNetwork.cu
+nvcc -o fjssp main.cpp NeuralNetwork.cu JobShopHeuristic.cpp
 ```
 
 To run:
 
 ```bash
-./NeuralNetwork
+./fjssp
 
 ```
