@@ -1,3 +1,0 @@
-/home/ubuntu/Projects/jobshop-gpu/build/CMakeFiles/JobShopScheduler.dir
-/home/ubuntu/Projects/jobshop-gpu/build/CMakeFiles/edit_cache.dir
-/home/ubuntu/Projects/jobshop-gpu/build/CMakeFiles/rebuild_cache.dir
