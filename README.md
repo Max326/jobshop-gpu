@@ -4,16 +4,19 @@ This is a repository for computing Neural Network outputs on a GPU
 
 ## Compilation and running
 
-To compile:
+CMake is used for project compilation.
+To compile the project:
 
 ```bash
-cd src
-nvcc -o fjssp main.cpp NeuralNetwork.cu JobShopHeuristic.cpp
+mkdir build
+cd build
+cmake ..
+make
 ```
 
-To run:
+To run the project:
 
 ```bash
-./fjssp
-
+cd build
+./JobShopScheduler
 ```
