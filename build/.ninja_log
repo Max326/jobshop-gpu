@@ -1,0 +1,6 @@
+# ninja log v5
+1	382	1742724299599818875	CMakeFiles/JobShopScheduler.dir/src/JobShopHeuristic.cpp.o	80a304b05666655a
+2	372	1742724299590818595	CMakeFiles/JobShopScheduler.dir/src/main.cpp.o	2156327549a7e888
+0	1252	1742724075300742605	CMakeFiles/JobShopScheduler.dir/src/NeuralNetwork.cu.o	76e73f401fb2e85d
+382	427	1742724299645820300	CMakeFiles/JobShopScheduler.dir/cmake_device_link.o	34fb69c7ce251c3b
+427	503	1742724299720822624	JobShopScheduler	4e29710b064379be
