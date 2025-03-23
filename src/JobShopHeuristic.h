@@ -1,6 +1,8 @@
 #ifndef JOB_SHOP_HEURISTIC_H
 #define JOB_SHOP_HEURISTIC_H
 
+#pragma once
+
 #include "JobShopData.h"
 #include "NeuralNetwork.h"
 #include <vector>
