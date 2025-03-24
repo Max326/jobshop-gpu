@@ -20,5 +20,7 @@ int main() {
     // Wyświetlenie wyniku
     std::cout << "Makespan: " << solution.makespan << std::endl;
 
+    heuristic.neuralNetwork.SaveToJson("weights_and_biases.json");
+
     return 0;
 }

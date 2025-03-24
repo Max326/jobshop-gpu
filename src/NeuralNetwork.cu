@@ -3,9 +3,14 @@
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <nlohmann/json.hpp>
 
 #include "NeuralNetwork.h"
+
+using json = nlohmann::json;
 
 // Funkcja aktywacji scaleTanh2
 __device__ float ScaleTanh2(float x) {
@@ -37,22 +42,33 @@ __global__ void ForwardPassKernel(const float *input, const float *weights, cons
 	}
 }
 
-NeuralNetwork::NeuralNetwork(const std::vector<int> &topology) : topology(topology) {
+NeuralNetwork::NeuralNetwork(const std::vector<int> &topology,
+							 const std::vector<std::vector<float>> *weights,
+							 const std::vector<std::vector<float>> *biases) : topology(topology) {
 	srand(time(0));	 // Inicjalizacja generatora liczb losowych
 
-	// Inicjalizacja wag i biasów
-	for(size_t i = 1; i < topology.size(); ++i) {
-		// Inicjalizacja wag
-		std::vector<float> layerWeights(topology[i] * topology[i - 1]);
-		float range = sqrt(6.0f / (topology[i - 1] + topology[i]));	 // Xavier initialization
-		for(float &weight: layerWeights) {
-			weight = (rand() / (float)RAND_MAX) * 2 * range - range;  // Losowa wartość z zakresu [-range, range]
+	// Jeśli wagi zostały podane, użyj ich, w przeciwnym razie zainicjalizuj losowo
+	if(weights != nullptr) {
+		this->weights = *weights;
+	} else {
+		for(size_t i = 1; i < topology.size(); ++i) {
+			std::vector<float> layerWeights(topology[i] * topology[i - 1]);
+			float range = sqrt(6.0f / (topology[i - 1] + topology[i]));	 // Xavier initialization
+			for(float &weight: layerWeights) {
+				weight = (rand() / (float)RAND_MAX) * 2 * range - range;
+			}
+			this->weights.push_back(layerWeights);
 		}
-		weights.push_back(layerWeights);
+	}
 
-		// Inicjalizacja biasów
-		std::vector<float> layerBiases(topology[i], 0.0f);	// Biasy można zostawić jako 0 lub też zainicjalizować losowo
-		biases.push_back(layerBiases);
+	// Jeśli biasy zostały podane, użyj ich, w przeciwnym razie zainicjalizuj jako 0
+	if(biases != nullptr) {
+		this->biases = *biases;
+	} else {
+		for(size_t i = 1; i < topology.size(); ++i) {
+			std::vector<float> layerBiases(topology[i], 0.0f);
+			this->biases.push_back(layerBiases);
+		}
 	}
 }
 
@@ -92,4 +108,48 @@ void NeuralNetwork::Forward(const std::vector<float> &input, std::vector<float> 
 
 	cudaFree(d_input);
 	cudaFree(d_output);
+}
+
+void NeuralNetwork::SaveToJson(const std::string& filename) const {
+    // Utwórz ścieżkę do folderu data
+    std::string dir_path = "../data/";
+    std::string full_path = dir_path + filename;
+    
+    // Utwórz folder jeśli nie istnieje
+    if (!std::filesystem::exists(dir_path)) {
+        std::filesystem::create_directory(dir_path);
+    }
+
+    json j;
+    j["topology"] = topology;
+    j["weights"] = weights;
+    j["biases"] = biases;
+
+    std::ofstream out(full_path);
+    if (!out.is_open()) {
+        std::cerr << "Error: Could not open file " << full_path << " for writing" << std::endl;
+        return;
+    }
+    
+    out << j.dump(4);
+    out.close();
+    
+    std::cout << "Successfully saved to: " << std::filesystem::absolute(full_path) << std::endl;
+}
+
+void NeuralNetwork::LoadFromJson(const std::string &filename) {
+	std::ifstream in(filename);
+	json j;
+	in >> j;
+	in.close();
+
+	// Wczytaj topologię (opcjonalnie, jeśli chcesz ją sprawdzić)
+	std::vector<int> loaded_topology = j["topology"];
+	if(loaded_topology != topology) {
+		std::cerr << "Warning: Topology mismatch! Proceeding anyway..." << std::endl;
+	}
+
+	// Wczytaj wagi i biasy
+	weights = j["weights"].get<std::vector<std::vector<float>>>();
+	biases = j["biases"].get<std::vector<std::vector<float>>>();
 }

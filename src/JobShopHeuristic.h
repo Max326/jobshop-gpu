@@ -3,26 +3,27 @@
 
 #pragma once
 
-#include "JobShopData.h"
-#include "NeuralNetwork.h"
 #include <vector>
 
-class JobShopHeuristic {
+#include "JobShopData.h"
+#include "NeuralNetwork.h"
+
+class JobShopHeuristic
+{
 public:
-    JobShopHeuristic(const std::vector<int>& topology);
+	JobShopHeuristic(const std::vector<int>& topology);
 
-    struct Solution {
-        double makespan;
-        std::vector<std::vector<int>> schedule; // Harmonogram dla każdej maszyny
-    };
+	struct Solution {
+		double makespan;
+		std::vector<std::vector<int>> schedule;	 // Harmonogram dla każdej maszyny
+	};
 
-    Solution Solve(const JobShopData& data);
+	Solution Solve(const JobShopData& data);
 
-private:
-    NeuralNetwork neuralNetwork;
+	NeuralNetwork neuralNetwork;
 
-    std::vector<float> ExtractFeatures(const JobShopData& data, int jobId, int operationId, int machineId);
-    void UpdateSchedule(JobShopData& data, int jobId, int operationId, int machineId, Solution& solution);
+	std::vector<float> ExtractFeatures(const JobShopData& data, int jobId, int operationId, int machineId);
+	void UpdateSchedule(JobShopData& data, int jobId, int operationId, int machineId, Solution& solution);
 };
 
-#endif // JOB_SHOP_HEURISTIC_H
+#endif	// JOB_SHOP_HEURISTIC_H
