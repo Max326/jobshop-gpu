@@ -9,22 +9,51 @@
 
 using json = nlohmann::json;
 
-JobShopHeuristic::JobShopHeuristic(const std::vector<int>& topology) 
-    : neuralNetwork(topology) {}  // bezpośrednia inicjalizacja członka
+JobShopHeuristic::JobShopHeuristic(const std::vector<int>& topology)
+	: neuralNetwork(topology) {}  // bezpośrednia inicjalizacja członka
 
 NeuralNetwork JobShopHeuristic::InitializeNetworkFromFile(const std::string& filename) {
-    std::ifstream in(filename);
-    if(!in.is_open()) throw std::runtime_error("Cannot open file: " + filename);
+	// Utwórz pełną ścieżkę do pliku
+	std::filesystem::path file_path(filename);
 
-    json j;
-    in >> j;
-    in.close();
+	// Jeśli ścieżka nie jest absolutna i nie zawiera 'data/', dodaj 'data/'
+	if(!file_path.is_absolute() && filename.find("data/") == std::string::npos) {
+		file_path = "data" / file_path;
+	}
 
-    std::vector<int> loaded_topology = j["topology"];
-    auto weights = j["weights"].get<std::vector<std::vector<float>>>();
-    auto biases = j["biases"].get<std::vector<std::vector<float>>>();
+	if(!std::filesystem::exists(file_path)) {
+		throw std::runtime_error("Network file not found: " + file_path.string());
+	}
 
-    return NeuralNetwork(loaded_topology, &weights, &biases);
+	std::ifstream in(file_path);
+	if(!in.is_open()) {
+		throw std::runtime_error("Cannot open file: " + file_path.string());
+	}
+
+	// Wczytaj dane JSON
+	json j;
+	try {
+		in >> j;
+		in.close();
+	} catch(const json::exception& e) {
+		throw std::runtime_error("JSON parsing error: " + std::string(e.what()));
+	}
+
+	// Wyodrębnij dane
+	try {
+		std::vector<int> loaded_topology = j["topology"];
+		auto weights = j["weights"].get<std::vector<std::vector<float>>>();
+		auto biases = j["biases"].get<std::vector<std::vector<float>>>();
+
+		// Walidacja danych
+		if(loaded_topology.empty() || weights.empty() || biases.empty()) {
+			throw std::runtime_error("Invalid network data in file");
+		}
+
+		return NeuralNetwork(loaded_topology, &weights, &biases);
+	} catch(const json::exception& e) {
+		throw std::runtime_error("Invalid JSON structure: " + std::string(e.what()));
+	}
 }
 
 JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {

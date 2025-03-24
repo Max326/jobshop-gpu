@@ -110,46 +110,43 @@ void NeuralNetwork::Forward(const std::vector<float> &input, std::vector<float> 
 	cudaFree(d_output);
 }
 
-void NeuralNetwork::SaveToJson(const std::string& filename) const {
-    // Utwórz ścieżkę do folderu data
-    std::string dir_path = "../data/";
-    std::string full_path = dir_path + filename;
-    
-    // Utwórz folder jeśli nie istnieje
-    if (!std::filesystem::exists(dir_path)) {
-        std::filesystem::create_directory(dir_path);
-    }
+void NeuralNetwork::SaveToJson(const std::string &filename) const {
+	const std::string data_dir = "../data/";
+	const std::string full_path = data_dir + filename;
 
-    json j;
-    j["topology"] = topology;
-    j["weights"] = weights;
-    j["biases"] = biases;
+	// Utwórz folder jeśli nie istnieje
+	if(!std::filesystem::exists(data_dir)) {
+		std::filesystem::create_directory(data_dir);
+	}
 
-    std::ofstream out(full_path);
-    if (!out.is_open()) {
-        std::cerr << "Error: Could not open file " << full_path << " for writing" << std::endl;
-        return;
-    }
-    
-    out << j.dump(4);
-    out.close();
-    
-    std::cout << "Successfully saved to: " << std::filesystem::absolute(full_path) << std::endl;
+	json j;
+	j["topology"] = topology;
+	j["weights"] = weights;
+	j["biases"] = biases;
+
+	std::ofstream out(full_path);
+	if(!out) {
+		throw std::runtime_error("Failed to save network to: " + full_path);
+	}
+	out << j.dump(4);
+	std::cout << "Network saved to: " << std::filesystem::absolute(full_path) << std::endl;
 }
 
 void NeuralNetwork::LoadFromJson(const std::string &filename) {
-	std::ifstream in(filename);
+	const std::string data_dir = "data/";
+	const std::string full_path = data_dir + filename;
+
+	if(!std::filesystem::exists(full_path)) {
+		throw std::runtime_error("Network file not found: " + full_path);
+	}
+
+	std::ifstream in(full_path);
 	json j;
 	in >> j;
 	in.close();
 
-	// Wczytaj topologię (opcjonalnie, jeśli chcesz ją sprawdzić)
-	std::vector<int> loaded_topology = j["topology"];
-	if(loaded_topology != topology) {
-		std::cerr << "Warning: Topology mismatch! Proceeding anyway..." << std::endl;
-	}
-
-	// Wczytaj wagi i biasy
+	// Wczytaj dane
+	topology = j["topology"].get<std::vector<int>>();
 	weights = j["weights"].get<std::vector<std::vector<float>>>();
 	biases = j["biases"].get<std::vector<std::vector<float>>>();
 }
