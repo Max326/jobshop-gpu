@@ -25,7 +25,7 @@ CMake and CMake Tools extensions for VSCode are suggested.
 
 ## CUDA Setup
 
-This may make you lose your sanity, so brace yourself.
+This may make you lose your sanity, so brace yourself. You should delete all Nvidia packages before proceeding with the CUDA Toolkit installation. Keep deleting them until the prompt for existing Nvidia packages stops popping up.
 
 1. Install required packages
 
