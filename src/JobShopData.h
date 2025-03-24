@@ -3,12 +3,14 @@
 
 #pragma once
 
-#include <iostream>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
+
+#include "FileManager.h"
 
 struct Job {
 	int id;
@@ -31,28 +33,20 @@ public:
 	std::vector<std::vector<int>> processingTimes;	// Macierz czasu przetwarzania [operacja][maszyna]
 
 	void SaveToJson(const std::string& filename) const {
-		const std::string data_dir = "../data/";
-		const std::string full_path = data_dir + filename;
+		FileManager::EnsureDataDirExists();
+		std::string full_path = FileManager::GetFullPath(filename);
 
 		json j;
 		j["numMachines"] = numMachines;
 		j["numJobs"] = numJobs;
 		j["numOperations"] = numOperations;
 
-		// Zapisz joby
 		j["jobs"] = json::array();
 		for(const auto& job: jobs) {
-			j["jobs"].push_back({{"id", job.id},
-								 {"operations", job.operations}});
+			j["jobs"].push_back({{"id", job.id}, {"operations", job.operations}});
 		}
 
-		// Zapisz czasy przetwarzania
 		j["processingTimes"] = processingTimes;
-
-		// Utwórz katalog data/ jeśli nie istnieje
-		if(!std::filesystem::exists(data_dir)) {
-			std::filesystem::create_directory(data_dir);
-		}
 
 		std::ofstream out(full_path);
 		if(!out) {
@@ -63,9 +57,11 @@ public:
 	}
 
 	void LoadFromJson(const std::string& filename) {
-		std::ifstream in(filename);
+		std::string full_path = FileManager::GetFullPath(filename);
+
+		std::ifstream in(full_path);
 		if(!in) {
-			throw std::runtime_error("Failed to open file: " + filename);
+			throw std::runtime_error("Failed to open file: " + full_path);
 		}
 
 		json j;

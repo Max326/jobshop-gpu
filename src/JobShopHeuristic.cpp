@@ -13,21 +13,15 @@ JobShopHeuristic::JobShopHeuristic(const std::vector<int>& topology)
 	: neuralNetwork(topology) {}  // bezpośrednia inicjalizacja członka
 
 NeuralNetwork JobShopHeuristic::InitializeNetworkFromFile(const std::string& filename) {
-	// Utwórz pełną ścieżkę do pliku
-	std::filesystem::path file_path(filename);
+	std::string full_path = FileManager::GetFullPath(filename);
 
-	// Jeśli ścieżka nie jest absolutna i nie zawiera 'data/', dodaj 'data/'
-	if(!file_path.is_absolute() && filename.find("data/") == std::string::npos) {
-		file_path = "data" / file_path;
+	if(!std::filesystem::exists(full_path)) {
+		throw std::runtime_error("Network file not found: " + full_path);
 	}
 
-	if(!std::filesystem::exists(file_path)) {
-		throw std::runtime_error("Network file not found: " + file_path.string());
-	}
-
-	std::ifstream in(file_path);
+	std::ifstream in(full_path);
 	if(!in.is_open()) {
-		throw std::runtime_error("Cannot open file: " + file_path.string());
+		throw std::runtime_error("Cannot open file: " + full_path);
 	}
 
 	// Wczytaj dane JSON

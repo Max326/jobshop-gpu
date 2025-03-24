@@ -3,14 +3,9 @@
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
-#include <filesystem>
 #include <fstream>
-#include <iostream>
-#include <nlohmann/json.hpp>
 
 #include "NeuralNetwork.h"
-
-using json = nlohmann::json;
 
 // Funkcja aktywacji scaleTanh2
 __device__ float ScaleTanh2(float x) {
@@ -108,45 +103,4 @@ void NeuralNetwork::Forward(const std::vector<float> &input, std::vector<float> 
 
 	cudaFree(d_input);
 	cudaFree(d_output);
-}
-
-void NeuralNetwork::SaveToJson(const std::string &filename) const {
-	const std::string data_dir = "../data/";
-	const std::string full_path = data_dir + filename;
-
-	// Utwórz folder jeśli nie istnieje
-	if(!std::filesystem::exists(data_dir)) {
-		std::filesystem::create_directory(data_dir);
-	}
-
-	json j;
-	j["topology"] = topology;
-	j["weights"] = weights;
-	j["biases"] = biases;
-
-	std::ofstream out(full_path);
-	if(!out) {
-		throw std::runtime_error("Failed to save network to: " + full_path);
-	}
-	out << j.dump(4);
-	std::cout << "Network saved to: " << std::filesystem::absolute(full_path) << std::endl;
-}
-
-void NeuralNetwork::LoadFromJson(const std::string &filename) {
-	const std::string data_dir = "data/";
-	const std::string full_path = data_dir + filename;
-
-	if(!std::filesystem::exists(full_path)) {
-		throw std::runtime_error("Network file not found: " + full_path);
-	}
-
-	std::ifstream in(full_path);
-	json j;
-	in >> j;
-	in.close();
-
-	// Wczytaj dane
-	topology = j["topology"].get<std::vector<int>>();
-	weights = j["weights"].get<std::vector<std::vector<float>>>();
-	biases = j["biases"].get<std::vector<std::vector<float>>>();
 }

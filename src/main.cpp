@@ -13,12 +13,12 @@ int main() {
 
 	try {
         JobShopData data;
-		// Generowanie przykładowych danych
-		if(generateRandomJobs) {
+
+        if(generateRandomJobs) {
 			data = GenerateData();
-			data.SaveToJson("jobshop_data.json");
+			data.SaveToJson("jobshop_data");
 		} else {
-            data.LoadFromJson("../data/jobshop_data.json");
+            data.LoadFromJson("jobshop_data");
         }
 
 		// Konfiguracja heurystyki
@@ -26,19 +26,17 @@ int main() {
 
 		if(generateRandomNNSetup) {
 			NeuralNetwork exampleNeuralNetwork(topology);
-			exampleNeuralNetwork.SaveToJson("weights_and_biases.json");
+			exampleNeuralNetwork.SaveToJson("weights_and_biases");
 		}
 
 		// JobShopHeuristic heuristic(topology);
-		JobShopHeuristic heuristic("../data/weights_and_biases.json");
+		JobShopHeuristic heuristic("weights_and_biases");
 
 		// Rozwiązanie problemu
 		JobShopHeuristic::Solution solution = heuristic.Solve(data);
-
-		// Wyświetlenie wyniku
 		std::cout << "Makespan: " << solution.makespan << std::endl;
 
-		// heuristic.neuralNetwork.SaveToJson("weights_and_biases.json");
+		// heuristic.neuralNetwork.SaveToJson("weights_and_biases");
 	} catch(const std::exception& e) {
 		std::cerr << "Error: " << e.what() << std::endl;
 		return 1;
