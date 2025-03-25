@@ -3,9 +3,9 @@
 
 #pragma once
 #include <filesystem>
+#include <iostream>
 #include <nlohmann/json.hpp>
 #include <vector>
-#include <iostream>
 
 #include "FileManager.h"
 
@@ -17,6 +17,14 @@ public:
 	NeuralNetwork(const std::vector<int>& topology,
 				  const std::vector<std::vector<float>>* weights = nullptr,
 				  const std::vector<std::vector<float>>* biases = nullptr);
+
+	NeuralNetwork(NeuralNetwork&& other) noexcept;
+	NeuralNetwork& operator=(NeuralNetwork&& other) noexcept;
+
+	NeuralNetwork(const NeuralNetwork&) = delete;
+	NeuralNetwork& operator=(const NeuralNetwork&) = delete;
+
+	~NeuralNetwork();
 
 	void Forward(const std::vector<float>& input, std::vector<float>& output);
 
@@ -55,9 +63,13 @@ public:
 	}
 
 private:
+	struct CudaData;					 // Forward declaration
+	std::unique_ptr<CudaData> cudaData;	 // Enkapsulacja danych CUDA
+
 	std::vector<int> topology;
 	std::vector<std::vector<float>> weights;
 	std::vector<std::vector<float>> biases;
+	std::vector<size_t> layerOffsets;
 };
 
 #endif	// NEURAL_NETWORK_H

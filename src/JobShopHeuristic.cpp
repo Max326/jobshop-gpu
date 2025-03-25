@@ -24,29 +24,18 @@ NeuralNetwork JobShopHeuristic::InitializeNetworkFromFile(const std::string& fil
 		throw std::runtime_error("Cannot open file: " + full_path);
 	}
 
-	// Wczytaj dane JSON
-	json j;
 	try {
+		json j;
 		in >> j;
 		in.close();
-	} catch(const json::exception& e) {
-		throw std::runtime_error("JSON parsing error: " + std::string(e.what()));
-	}
 
-	// Wyodrębnij dane
-	try {
 		std::vector<int> loaded_topology = j["topology"];
 		auto weights = j["weights"].get<std::vector<std::vector<float>>>();
 		auto biases = j["biases"].get<std::vector<std::vector<float>>>();
 
-		// Walidacja danych
-		if(loaded_topology.empty() || weights.empty() || biases.empty()) {
-			throw std::runtime_error("Invalid network data in file");
-		}
-
 		return NeuralNetwork(loaded_topology, &weights, &biases);
-	} catch(const json::exception& e) {
-		throw std::runtime_error("Invalid JSON structure: " + std::string(e.what()));
+	} catch(const std::exception& e) {
+		throw std::runtime_error("JSON parsing error: " + std::string(e.what()));
 	}
 }
 

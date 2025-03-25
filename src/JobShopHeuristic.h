@@ -17,7 +17,7 @@ public:
 
 	// Konstruktor ładujący z pliku
 	JobShopHeuristic(const std::string& filename)
-		: JobShopHeuristic(InitializeNetworkFromFile(filename)) {}
+		: neuralNetwork(InitializeNetworkFromFile(filename)) {}
 
 	struct Solution {
 		double makespan;
