@@ -33,6 +33,13 @@ NeuralNetwork JobShopHeuristic::InitializeNetworkFromFile(const std::string& fil
 		auto weights = j["weights"].get<std::vector<std::vector<float>>>();
 		auto biases = j["biases"].get<std::vector<std::vector<float>>>();
 
+		std::cout << "second weight: " << weights[1][2] << std::endl;
+		std::cout << "second bias: " << biases[1][0] << std::endl;
+
+		if(loaded_topology.empty() || weights.empty() || biases.empty()) {
+			throw std::runtime_error("Invalid network data in file");
+		}
+
 		return NeuralNetwork(loaded_topology, &weights, &biases);
 	} catch(const std::exception& e) {
 		throw std::runtime_error("JSON parsing error: " + std::string(e.what()));
@@ -62,6 +69,8 @@ JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
 
 				// Przygotuj wektor cech
 				std::vector<float> features = ExtractFeatures(modifiedData, jobId, operationId, machineId);
+
+				std::cout << "Features: " << features[0] << ", " << features[1] << ", " << features[2] << std::endl;
 
 				// Oceń decyzję za pomocą sieci neuronowej
 				std::vector<float> output;
