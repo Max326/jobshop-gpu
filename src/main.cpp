@@ -23,7 +23,7 @@ int main() {
 
 		// Konfiguracja heurystyki
 		// std::vector<int> topology = {3, 16, 1};	 // Przykładowa topologia sieci
-		std::vector<int> topology = {3, 2, 1};	 // Przykładowa topologia sieci
+		std::vector<int> topology = {1, 2, 1};	 // Przykładowa topologia sieci
 
 
 		if(generateRandomNNSetup) {
