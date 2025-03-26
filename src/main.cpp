@@ -22,7 +22,9 @@ int main() {
         }
 
 		// Konfiguracja heurystyki
-		std::vector<int> topology = {3, 16, 1};	 // Przykładowa topologia sieci
+		// std::vector<int> topology = {3, 16, 1};	 // Przykładowa topologia sieci
+		std::vector<int> topology = {3, 2, 1};	 // Przykładowa topologia sieci
+
 
 		if(generateRandomNNSetup) {
 			NeuralNetwork exampleNeuralNetwork(topology);
@@ -30,7 +32,7 @@ int main() {
 		}
 
 		// JobShopHeuristic heuristic(topology);
-		JobShopHeuristic heuristic("weights_and_biases");
+		JobShopHeuristic heuristic("weights_and_biases_test");
 
 		// Rozwiązanie problemu
 		JobShopHeuristic::Solution solution = heuristic.Solve(data);
