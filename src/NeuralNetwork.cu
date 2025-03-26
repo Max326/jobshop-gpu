@@ -108,29 +108,36 @@ NeuralNetwork::NeuralNetwork(const std::vector<int> &topology,
 		total_biases += this->biases[i].size();
 	}
 
-	// 2. Alokacja pamięci GPU
-	cudaMalloc(&cudaData->d_weights, total_weights * sizeof(float));
-	cudaMalloc(&cudaData->d_biases, total_biases * sizeof(float));
-	cudaMalloc(&cudaData->d_input, topology[0] * sizeof(float));
-	cudaMalloc(&cudaData->d_output, topology.back() * sizeof(float));
+    // 2. Allocate GPU memory for weights and biases
+	CUDA_CHECK(cudaMalloc(&cudaData->d_weights, total_weights * sizeof(float)));
+	CUDA_CHECK(cudaMalloc(&cudaData->d_biases, total_biases * sizeof(float)));
 
-	CUDA_CHECK(cudaMemset(cudaData->d_weights, 0, total_weights * sizeof(float)));
-	CUDA_CHECK(cudaMemset(cudaData->d_biases, 0, total_biases * sizeof(float)));
+	// 3. Find the maximum layer size for input/output buffers
+	int max_layer_size = 0;
+	for(int size: topology) {
+		if(size > max_layer_size) {
+			max_layer_size = size;
+		}
+	}
 
-	// 3. Skopiuj wagi i biasy
+	// Allocate input and output buffers to the maximum layer size
+	CUDA_CHECK(cudaMalloc(&cudaData->d_input, max_layer_size * sizeof(float)));
+	CUDA_CHECK(cudaMalloc(&cudaData->d_output, max_layer_size * sizeof(float)));
+
+	// 4. Copy weights and biases to GPU
 	size_t weight_offset = 0;
 	size_t bias_offset = 0;
 
 	for(size_t i = 0; i < this->weights.size(); ++i) {
-		cudaMemcpy(cudaData->d_weights + weight_offset,
-				   this->weights[i].data(),
-				   this->weights[i].size() * sizeof(float),
-				   cudaMemcpyHostToDevice);
+		CUDA_CHECK(cudaMemcpy(cudaData->d_weights + weight_offset,
+							  this->weights[i].data(),
+							  this->weights[i].size() * sizeof(float),
+							  cudaMemcpyHostToDevice));
 
-		cudaMemcpy(cudaData->d_biases + bias_offset,
-				   this->biases[i].data(),
-				   this->biases[i].size() * sizeof(float),
-				   cudaMemcpyHostToDevice);
+		CUDA_CHECK(cudaMemcpy(cudaData->d_biases + bias_offset,
+							  this->biases[i].data(),
+							  this->biases[i].size() * sizeof(float),
+							  cudaMemcpyHostToDevice));
 
 		weight_offset += this->weights[i].size();
 		bias_offset += this->biases[i].size();
