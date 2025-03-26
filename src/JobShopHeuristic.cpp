@@ -70,11 +70,16 @@ JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
 				// Przygotuj wektor cech
 				std::vector<float> features = ExtractFeatures(modifiedData, jobId, operationId, machineId);
 
-				std::cout << "Features: " << features[0] << ", " << features[1] << ", " << features[2] << std::endl;
+				// std::cout << "Features: " << features[0] << ", " << features[1] << ", " << features[2] << std::endl;
 
 				// Oceń decyzję za pomocą sieci neuronowej
 				std::vector<float> output;
 				neuralNetwork.Forward(features, output);
+
+				// Add to Solve(), after neuralNetwork.Forward()
+				std::cout << "Features: " << features[0] << "," << features[1] << "," << features[2]
+						  << " -> Score: " << output[0] << std::endl;
+
 				float score = output[0];
 
 				if(score > bestScore) {
