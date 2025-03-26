@@ -7,6 +7,7 @@
 
 #include "NeuralNetwork.h"
 
+
 struct NeuralNetwork::CudaData {
 	float *d_weights = nullptr;
 	float *d_biases = nullptr;
@@ -75,23 +76,18 @@ __device__ float ScaleTanh2(float x) {
 // 	}
 // }
 
-__global__ void ForwardPassKernel(const float *input, const float *weights,
-								  const float *biases, float *output,
-								  int inputSize, int outputSize) {
+
+__global__ void ForwardPassKernel(const float *input, const float *weights, const float *biases, float *output, int inputSize, int outputSize) {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if(idx >= outputSize) return;  // Zabezpieczenie!
 
-	// // TODO remove after debug
-	// if(idx == 0) {
-	// 	printf("Input[0]=%.6f, Weights[0]=%.6f, Bias=%.6f\n",
-	// 		   input[0], weights[0], biases[idx]);
-	// }
-
-	float sum = biases[idx];
-	for(int i = 0; i < inputSize; ++i) {
-		sum += input[i] * weights[idx * inputSize + i];  // DOBRZE
+	if(idx < outputSize) {
+		float sum = biases[idx];
+		for(int i = 0; i < inputSize; ++i) {
+			sum += input[i] * weights[idx * inputSize + i];
+		}
+		output[idx] = ScaleTanh2(sum);	// Zastosowanie funkcji aktywacji
 	}
-	output[idx] = ScaleTanh2(sum);
 }
 
 NeuralNetwork::NeuralNetwork(const std::vector<int> &topology,

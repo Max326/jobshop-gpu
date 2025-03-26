@@ -12,14 +12,14 @@ int main() {
 	bool generateRandomNNSetup = false;
 
 	try {
-        JobShopData data;
+		JobShopData data;
 
-        if(generateRandomJobs) {
+		if(generateRandomJobs) {
 			data = GenerateData();
 			data.SaveToJson("jobshop_data");
 		} else {
-            data.LoadFromJson("jobshop_data");
-        }
+			data.LoadFromJson("jobshop_data");
+		}
 
 		// Konfiguracja heurystyki
 		// std::vector<int> topology = {3, 16, 1};	 // Przykładowa topologia sieci

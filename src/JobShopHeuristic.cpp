@@ -77,8 +77,8 @@ JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
 				neuralNetwork.Forward(features, output);
 
 				// Add to Solve(), after neuralNetwork.Forward()
-				std::cout << "Features: " << features[0] << "," << features[1] << "," << features[2]
-						  << " -> Score: " << output[0] << std::endl;
+				// std::cout << "Features: " << features[0] << "," << features[1] << "," << features[2]
+				//   << " -> Score: " << output[0] << std::endl;
 
 				float score = output[0];
 
