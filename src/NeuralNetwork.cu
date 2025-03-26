@@ -7,7 +7,6 @@
 
 #include "NeuralNetwork.h"
 
-
 struct NeuralNetwork::CudaData {
 	float *d_weights = nullptr;
 	float *d_biases = nullptr;
@@ -58,9 +57,7 @@ __device__ float ScaleTanh2(float x) {
 // // Kernel CUDA do obliczania wyjścia warstwy
 // __global__ void ForwardPassKernel(const float *input, const float *weights, const float *biases, float *output, int inputSize, int outputSize) {
 // 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-
 // 	if (idx >= outputSize) return;
-
 // 	// DEBUG: Sprawdź pierwszy element
 //     if(idx == 0 && threadIdx.x == 0) {
 //         printf("GPU: first weight=%f, bias=%f\n", weights[0], biases[0]);
@@ -76,16 +73,16 @@ __device__ float ScaleTanh2(float x) {
 // 	}
 // }
 
-
-__global__ void ForwardPassKernel(const float *input, const float *weights, const float *biases, float *output, int inputSize, int outputSize) {
+__global__ void ForwardPassKernel(const float *input, int inputSize, const float *weights, const float *biases, float *output, int outputSize) {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if(idx >= outputSize) return;  // Zabezpieczenie!
 
+	float sum = 0.0f;
 	if(idx < outputSize) {
-		float sum = biases[idx];
 		for(int i = 0; i < inputSize; ++i) {
 			sum += input[i] * weights[idx * inputSize + i];
 		}
+		sum += biases[idx];
 		output[idx] = ScaleTanh2(sum);	// Zastosowanie funkcji aktywacji
 	}
 }
@@ -99,12 +96,15 @@ NeuralNetwork::NeuralNetwork(const std::vector<int> &topology,
 	  cudaData(std::make_unique<CudaData>()) {
 	// 1. Oblicz offsety dla każdej warstwy
 	layerOffsets.resize(this->weights.size());
+	biasOffsets.resize(biases.size());
 	size_t total_weights = 0;
 	size_t total_biases = 0;
 
 	for(size_t i = 0; i < this->weights.size(); ++i) {
 		layerOffsets[i] = total_weights;
 		total_weights += this->weights[i].size();
+
+		biasOffsets[i] = total_biases;
 		total_biases += this->biases[i].size();
 	}
 
@@ -153,44 +153,45 @@ NeuralNetwork::~NeuralNetwork() {
 		cudaFree(cudaData->d_output);
 	}
 }
-void NeuralNetwork::Forward(const std::vector<float> &input, std::vector<float> &output) {
-	if(input.size() != static_cast<size_t>(topology[0])) {
-		throw std::runtime_error("Input size mismatch");
-	}
+std::vector<float> NeuralNetwork::Forward(const std::vector<float> &input) {
+	// Copy input to device
 	CUDA_CHECK(cudaMemcpy(cudaData->d_input, input.data(),
 						  input.size() * sizeof(float),
 						  cudaMemcpyHostToDevice));
 
-	// // 1. Kopiuj wejście
-	// cudaMemcpy(cudaData->d_input, input.data(),
-	// 		   input.size() * sizeof(float),
-	// 		   cudaMemcpyHostToDevice);
+	float *current_input = cudaData->d_input;
+	float *current_output = cudaData->d_output;
 
-	// 2. Obliczenia dla każdej warstwy
-	size_t weight_offset = 0;
-	size_t bias_offset = 0;
+	for(size_t l = 0; l < weights.size(); ++l) {
+		int in_size = topology[l];
+		int out_size = topology[l + 1];
 
-	for(size_t i = 0; i < weights.size(); ++i) {
-		dim3 block(256);
-		dim3 grid((topology[i + 1] + block.x - 1) / block.x);
+		// Get the weight and bias offsets for this layer
+		size_t weight_offset = layerOffsets[l];
+		size_t bias_offset = biasOffsets[l];
 
-		ForwardPassKernel<<<grid, block>>>(
-			i == 0 ? cudaData->d_input : cudaData->d_output,
+		// Launch the kernel
+		int threadsPerBlock = 256;
+		int blocksPerGrid = (out_size + threadsPerBlock - 1) / threadsPerBlock;
+		ForwardPassKernel<<<blocksPerGrid, threadsPerBlock>>>(
+			current_input, in_size,
 			cudaData->d_weights + weight_offset,
 			cudaData->d_biases + bias_offset,
-			cudaData->d_output,
-			topology[i],
-			topology[i + 1]);
+			current_output, out_size);
+		CUDA_CHECK(cudaGetLastError());
+		CUDA_CHECK(cudaDeviceSynchronize());
 
-		CUDA_CHECK(cudaDeviceSynchronize());  // TODO remove after debug
-
-		weight_offset += weights[i].size();
-		bias_offset += biases[i].size();
+		// Swap input and output buffers if not the last layer
+		if(l != weights.size() - 1) {
+			std::swap(current_input, current_output);
+		}
 	}
 
-	// 3. Pobierz wynik
-	output.resize(topology.back());
-	CUDA_CHECK(cudaMemcpy(output.data(), cudaData->d_output,
-						  output.size() * sizeof(float),
+	// Copy the final output from device to host
+	std::vector<float> output(topology.back());
+	CUDA_CHECK(cudaMemcpy(output.data(), current_output,
+						  topology.back() * sizeof(float),
 						  cudaMemcpyDeviceToHost));
+
+	return output;
 }

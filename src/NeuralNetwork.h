@@ -26,7 +26,8 @@ public:
 
 	~NeuralNetwork();
 
-	void Forward(const std::vector<float>& input, std::vector<float>& output);
+	// void Forward(const std::vector<float>& input, std::vector<float>& output);
+	std::vector<float> Forward(const std::vector<float>& input);
 
 	void SaveToJson(const std::string& filename) const {
 		FileManager::EnsureDataDirExists();
@@ -70,6 +71,7 @@ private:
 	std::vector<std::vector<float>> weights;
 	std::vector<std::vector<float>> biases;
 	std::vector<size_t> layerOffsets;
+	std::vector<size_t> biasOffsets;
 
 #define CUDA_CHECK(call)                                                                                \
 	{                                                                                                   \
