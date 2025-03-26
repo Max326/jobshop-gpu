@@ -94,7 +94,56 @@ NeuralNetwork::NeuralNetwork(const std::vector<int> &topology,
 	  weights(weights_ptr ? *weights_ptr : std::vector<std::vector<float>>()),
 	  biases(biases_ptr ? *biases_ptr : std::vector<std::vector<float>>()),
 	  cudaData(std::make_unique<CudaData>()) {
-	// 1. Oblicz offsety dla każdej warstwy
+	// ======================
+	//  Validation checks
+	// ======================
+
+	// 1. Validate topology
+	if(topology.empty()) {
+		throw std::invalid_argument("NeuralNetwork: Topology cannot be empty");
+	}
+
+	if(topology.size() < 2) {
+		throw std::invalid_argument("NeuralNetwork: Topology must have at least 2 layers (input/output)");
+	}
+
+	// 2. Validate weights/biases structure
+	const size_t num_weight_layers = topology.size() - 1;
+
+	if(weights.size() != num_weight_layers) {
+		throw std::invalid_argument("NeuralNetwork: Incorrect number of weight matrices. Expected " +
+									std::to_string(num_weight_layers) + ", got " +
+									std::to_string(weights.size()));
+	}
+
+	if(biases.size() != num_weight_layers) {
+		throw std::invalid_argument("NeuralNetwork: Incorrect number of bias vectors. Expected " +
+									std::to_string(num_weight_layers) + ", got " +
+									std::to_string(biases.size()));
+	}
+
+	// 3. Validate individual layer dimensions
+	for(size_t i = 0; i < weights.size(); ++i) {
+		const int expected_weights = topology[i] * topology[i + 1];
+		if(weights[i].size() != static_cast<size_t>(expected_weights)) {
+			throw std::invalid_argument("NeuralNetwork: Weights matrix at layer " +
+										std::to_string(i) + " has incorrect size. Expected " +
+										std::to_string(expected_weights) + ", got " +
+										std::to_string(weights[i].size()));
+		}
+	}
+
+	for(size_t i = 0; i < biases.size(); ++i) {
+		const int expected_biases = topology[i + 1];
+		if(biases[i].size() != static_cast<size_t>(expected_biases)) {
+			throw std::invalid_argument("NeuralNetwork: Bias vector at layer " +
+										std::to_string(i) + " has incorrect size. Expected " +
+										std::to_string(expected_biases) + ", got " +
+										std::to_string(biases[i].size()));
+		}
+	}
+
+	// 1. Calculate offsets for each layer's weights and biases
 	layerOffsets.resize(this->weights.size());
 	biasOffsets.resize(biases.size());
 	size_t total_weights = 0;
@@ -108,7 +157,7 @@ NeuralNetwork::NeuralNetwork(const std::vector<int> &topology,
 		total_biases += this->biases[i].size();
 	}
 
-    // 2. Allocate GPU memory for weights and biases
+	// 2. Allocate GPU memory for weights and biases
 	CUDA_CHECK(cudaMalloc(&cudaData->d_weights, total_weights * sizeof(float)));
 	CUDA_CHECK(cudaMalloc(&cudaData->d_biases, total_biases * sizeof(float)));
 

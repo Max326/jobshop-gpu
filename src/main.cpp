@@ -29,7 +29,7 @@ int main() {
 
 		std::vector<std::vector<float>> weights = {
 			{0.1, 0.2},
-			{0.3},
+			{0.3, 0.4},
 		};
 
 		std::vector<std::vector<float>> biases = {
