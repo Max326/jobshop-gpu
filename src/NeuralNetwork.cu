@@ -54,17 +54,44 @@ __device__ float ScaleTanh2(float x) {
 	}
 }
 
-// Kernel CUDA do obliczania wyjścia warstwy
-__global__ void ForwardPassKernel(const float *input, const float *weights, const float *biases, float *output, int inputSize, int outputSize) {
+// // Kernel CUDA do obliczania wyjścia warstwy
+// __global__ void ForwardPassKernel(const float *input, const float *weights, const float *biases, float *output, int inputSize, int outputSize) {
+// 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+// 	if (idx >= outputSize) return;
+
+// 	// DEBUG: Sprawdź pierwszy element
+//     if(idx == 0 && threadIdx.x == 0) {
+//         printf("GPU: first weight=%f, bias=%f\n", weights[0], biases[0]);
+//     }
+
+// 	if(idx < outputSize) {
+// 		float sum = 0.0f;
+// 		for(int i = 0; i < inputSize; ++i) {
+// 			sum += input[i] * weights[idx * inputSize + i];
+// 		}
+// 		sum += biases[idx];
+// 		output[idx] = ScaleTanh2(sum);	// Zastosowanie funkcji aktywacji
+// 	}
+// }
+
+__global__ void ForwardPassKernel(const float *input, const float *weights,
+								  const float *biases, float *output,
+								  int inputSize, int outputSize) {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	if(idx < outputSize) {
-		float sum = 0.0f;
-		for(int i = 0; i < inputSize; ++i) {
-			sum += input[i] * weights[idx * inputSize + i];
-		}
-		sum += biases[idx];
-		output[idx] = ScaleTanh2(sum);	// Zastosowanie funkcji aktywacji
+	if(idx >= outputSize) return;  // Zabezpieczenie!
+
+	// // TODO remove after debug
+	// if(idx == 0) {
+	// 	printf("Input[0]=%.6f, Weights[0]=%.6f, Bias=%.6f\n",
+	// 		   input[0], weights[0], biases[idx]);
+	// }
+
+	float sum = biases[idx];
+	for(int i = 0; i < inputSize; ++i) {
+		sum += input[i] * weights[idx * inputSize + i];  // DOBRZE
 	}
+	output[idx] = ScaleTanh2(sum);
 }
 
 NeuralNetwork::NeuralNetwork(const std::vector<int> &topology,
@@ -91,6 +118,9 @@ NeuralNetwork::NeuralNetwork(const std::vector<int> &topology,
 	cudaMalloc(&cudaData->d_input, topology[0] * sizeof(float));
 	cudaMalloc(&cudaData->d_output, topology.back() * sizeof(float));
 
+	CUDA_CHECK(cudaMemset(cudaData->d_weights, 0, total_weights * sizeof(float)));
+	CUDA_CHECK(cudaMemset(cudaData->d_biases, 0, total_biases * sizeof(float)));
+
 	// 3. Skopiuj wagi i biasy
 	size_t weight_offset = 0;
 	size_t bias_offset = 0;
@@ -109,6 +139,14 @@ NeuralNetwork::NeuralNetwork(const std::vector<int> &topology,
 		weight_offset += this->weights[i].size();
 		bias_offset += this->biases[i].size();
 	}
+
+	// W konstruktorze, po załadowaniu wag:
+	std::cout << "=== DATA VALIDATION ===\n";
+	std::cout << "Topology: ";
+	for(auto t: topology)
+		std::cout << t << " ";
+	std::cout << "\nFirst weight layer: " << weights[0][0] << ", " << weights[0][1] << "...\n";
+	std::cout << "First bias: " << biases[0][0] << "\n";
 }
 
 NeuralNetwork::~NeuralNetwork() {
@@ -120,10 +158,17 @@ NeuralNetwork::~NeuralNetwork() {
 	}
 }
 void NeuralNetwork::Forward(const std::vector<float> &input, std::vector<float> &output) {
-	// 1. Kopiuj wejście
-	cudaMemcpy(cudaData->d_input, input.data(),
-			   input.size() * sizeof(float),
-			   cudaMemcpyHostToDevice);
+	if(input.size() != static_cast<size_t>(topology[0])) {
+		throw std::runtime_error("Input size mismatch");
+	}
+	CUDA_CHECK(cudaMemcpy(cudaData->d_input, input.data(),
+						  input.size() * sizeof(float),
+						  cudaMemcpyHostToDevice));
+
+	// // 1. Kopiuj wejście
+	// cudaMemcpy(cudaData->d_input, input.data(),
+	// 		   input.size() * sizeof(float),
+	// 		   cudaMemcpyHostToDevice);
 
 	// 2. Obliczenia dla każdej warstwy
 	size_t weight_offset = 0;
@@ -141,13 +186,15 @@ void NeuralNetwork::Forward(const std::vector<float> &input, std::vector<float> 
 			topology[i],
 			topology[i + 1]);
 
+		CUDA_CHECK(cudaDeviceSynchronize());  // TODO remove after debug
+
 		weight_offset += weights[i].size();
 		bias_offset += biases[i].size();
 	}
 
 	// 3. Pobierz wynik
 	output.resize(topology.back());
-	cudaMemcpy(output.data(), cudaData->d_output,
-			   output.size() * sizeof(float),
-			   cudaMemcpyDeviceToHost);
+	CUDA_CHECK(cudaMemcpy(output.data(), cudaData->d_output,
+						  output.size() * sizeof(float),
+						  cudaMemcpyDeviceToHost));
 }

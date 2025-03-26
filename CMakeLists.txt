@@ -4,6 +4,9 @@ project(JobShopScheduler CUDA CXX)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CXX_STANDARD 17)
 
+# Poprawne flagi dla CUDA 12.x
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --fmad=false --prec-div=true --prec-sqrt=true")
+
 # Dodaj katalog źródłowy
 include_directories(src)
 
