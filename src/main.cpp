@@ -9,23 +9,22 @@ int main() {
 	srand(time(0));
 
 	bool generateRandomJobs = true;
-	bool generateRandomNNSetup = true;
+	bool generateRandomNNSetup = false;
 
 	try {
-		// JobShopData data;
+		JobShopData data;
 
-		// if(generateRandomJobs) { // TODO: fix data generation (don't generate in build)
-		// 	data = GenerateData();
-		// 	data.SaveToJson("jobshop_data");
-		// } else {
-		// 	data.LoadFromJson("jobshop_data");
-		// }
+		if(generateRandomJobs) {  // TODO: fix data generation (don't generate in build)
+			data = GenerateData();
+			data.SaveToJson("jobshop_data");
+		} else {
+			data.LoadFromJson("jobshop_data");
+		}
 
 		// Konfiguracja heurystyki
 		// std::vector<int> topology = {3, 16, 1};	 // Przykładowa topologia sieci
 
-
-		std::vector<int> topology = {2, 2, 1};	 // Przykładowa topologia sieci
+		std::vector<int> topology = {2, 2, 1};	// Przykładowa topologia sieci
 
 		std::vector<std::vector<float>> weights = {
 			{0.1, 0.2, 0.3, 0.4},
@@ -39,25 +38,27 @@ int main() {
 
 		NeuralNetwork nn(topology, &weights, &biases);
 
-		// std::vector<int>;
+		// // std::vector<int>;
 
-		std::vector<float> output = nn.Forward({0.1, 0.2});
+		// std::vector<float> output = nn.Forward({0.1, 0.2});
 
-		std::cout << "NN Result: " << output[0] << std::endl;
+		// std::cout << "NN Result: " << output[0] << std::endl;
 
-		// if(generateRandomNNSetup) {
-		// 	NeuralNetwork exampleNeuralNetwork(topology);
-		// 	exampleNeuralNetwork.SaveToJson("weights_and_biases");
-		// }
+		if(generateRandomNNSetup) {
+			NeuralNetwork exampleNeuralNetwork(topology);
+			exampleNeuralNetwork.SaveToJson("weights_and_biases");
+			exampleNeuralNetwork.LoadFromJson("weights_and_biases");
+		}
 
 		// JobShopHeuristic heuristic(topology);
 		// JobShopHeuristic heuristic("weights_and_biases");
+		JobShopHeuristic heuristic(std::move(nn));
 
-		// // Rozwiązanie problemu
-		// JobShopHeuristic::Solution solution = heuristic.Solve(data);
-		// std::cout << "Makespan: " << solution.makespan << std::endl;
+		// Rozwiązanie problemu
+		JobShopHeuristic::Solution solution = heuristic.Solve(data);
+		std::cout << "Makespan: " << solution.makespan << std::endl;
 
-		// heuristic.neuralNetwork.SaveToJson("weights_and_biases");
+		heuristic.neuralNetwork.SaveToJson("weights_and_biases");
 	} catch(const std::exception& e) {
 		std::cerr << "Error: " << e.what() << std::endl;
 		return 1;

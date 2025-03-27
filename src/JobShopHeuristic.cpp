@@ -72,6 +72,8 @@ JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
 
 				// std::cout << "Features: " << features[0] << ", " << features[1] << ", " << features[2] << std::endl;
 
+				features.resize(2);
+
 				// Oceń decyzję za pomocą sieci neuronowej
 				std::vector<float> output = neuralNetwork.Forward(features);
 

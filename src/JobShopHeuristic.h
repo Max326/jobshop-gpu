@@ -19,6 +19,8 @@ public:
 	JobShopHeuristic(const std::string& filename)
 		: neuralNetwork(InitializeNetworkFromFile(filename)) {}
 
+	JobShopHeuristic(NeuralNetwork&& net) : neuralNetwork(std::move(net)) {}
+
 	struct Solution {
 		double makespan;
 		std::vector<std::vector<int>> schedule;	 // Harmonogram dla każdej maszyny
@@ -29,7 +31,7 @@ public:
 	NeuralNetwork neuralNetwork;
 
 private:
-	JobShopHeuristic(NeuralNetwork&& net) : neuralNetwork(std::move(net)) {}
+	// JobShopHeuristic(NeuralNetwork&& net) : neuralNetwork(std::move(net)) {}
 
 	static NeuralNetwork InitializeNetworkFromFile(const std::string& filename);
 

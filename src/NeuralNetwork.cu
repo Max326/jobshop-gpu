@@ -20,6 +20,7 @@ NeuralNetwork::NeuralNetwork(NeuralNetwork &&other) noexcept
 	  weights(std::move(other.weights)),
 	  biases(std::move(other.biases)),
 	  layerOffsets(std::move(other.layerOffsets)),
+	  biasOffsets(std::move(other.biasOffsets)),
 	  cudaData(std::move(other.cudaData)) {
 	// Zabezpieczenie przed podwójnym zwolnieniem pamięci
 	other.cudaData.reset(nullptr);
@@ -32,6 +33,7 @@ NeuralNetwork &NeuralNetwork::operator=(NeuralNetwork &&other) noexcept {
 		weights = std::move(other.weights);
 		biases = std::move(other.biases);
 		layerOffsets = std::move(other.layerOffsets);
+		biasOffsets = std::move(other.biasOffsets);
 		cudaData = std::move(other.cudaData);
 	}
 	return *this;
