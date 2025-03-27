@@ -14,7 +14,7 @@ int main() {
 	try {
 		// JobShopData data;
 
-		// if(generateRandomJobs) {
+		// if(generateRandomJobs) { // TODO: fix data generation (don't generate in build)
 		// 	data = GenerateData();
 		// 	data.SaveToJson("jobshop_data");
 		// } else {
@@ -25,11 +25,11 @@ int main() {
 		// std::vector<int> topology = {3, 16, 1};	 // Przykładowa topologia sieci
 
 
-		std::vector<int> topology = {1, 2, 1};	 // Przykładowa topologia sieci
+		std::vector<int> topology = {2, 2, 1};	 // Przykładowa topologia sieci
 
 		std::vector<std::vector<float>> weights = {
-			{0.1, 0.2},
-			{0.3, 0.4},
+			{0.1, 0.2, 0.3, 0.4},
+			{0.5, 0.6},
 		};
 
 		std::vector<std::vector<float>> biases = {
@@ -39,7 +39,9 @@ int main() {
 
 		NeuralNetwork nn(topology, &weights, &biases);
 
-		std::vector<float> output = nn.Forward({0.1});
+		// std::vector<int>;
+
+		std::vector<float> output = nn.Forward({0.1, 0.2});
 
 		std::cout << "NN Result: " << output[0] << std::endl;
 
