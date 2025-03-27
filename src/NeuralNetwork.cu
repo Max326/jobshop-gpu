@@ -56,26 +56,9 @@ __device__ float ScaleTanh2(float x) {
 	}
 }
 
-// // Kernel CUDA do obliczania wyjścia warstwy
-// __global__ void ForwardPassKernel(const float *input, const float *weights, const float *biases, float *output, int inputSize, int outputSize) {
-// 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-// 	if (idx >= outputSize) return;
-// 	// DEBUG: Sprawdź pierwszy element
-//     if(idx == 0 && threadIdx.x == 0) {
-//         printf("GPU: first weight=%f, bias=%f\n", weights[0], biases[0]);
-//     }
-
-// 	if(idx < outputSize) {
-// 		float sum = 0.0f;
-// 		for(int i = 0; i < inputSize; ++i) {
-// 			sum += input[i] * weights[idx * inputSize + i];
-// 		}
-// 		sum += biases[idx];
-// 		output[idx] = ScaleTanh2(sum);	// Zastosowanie funkcji aktywacji
-// 	}
-// }
-
-__global__ void ForwardPassKernel(const float *input, int inputSize, const float *weights, const float *biases, float *output, int outputSize) {
+__global__ void ForwardPassKernel(const float *input, int inputSize,
+								  const float *weights, const float *biases,
+								  float *output, int outputSize) {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if(idx >= outputSize) return;  // Zabezpieczenie!
 
@@ -99,6 +82,13 @@ NeuralNetwork::NeuralNetwork(const std::vector<int> &topology,
 	// ======================
 	//  Validation checks
 	// ======================
+
+	if(weights_ptr == nullptr) {
+		GenerateWeights();
+	}
+	if(biases_ptr == nullptr) {
+		GenerateBiases();
+	}
 
 	// 1. Validate topology
 	if(topology.empty()) {
@@ -255,6 +245,7 @@ std::vector<float> NeuralNetwork::Forward(const std::vector<float> &input) {
 }
 
 void NeuralNetwork::GenerateWeights() {
+	weights.clear();
 	// if(weights != nullptr) {
 	// this->weights = *weights;
 	// } else {
@@ -267,4 +258,12 @@ void NeuralNetwork::GenerateWeights() {
 		this->weights.push_back(layerWeights);
 	}
 	// }
+}
+
+void NeuralNetwork::GenerateBiases() {
+	biases.clear();
+	for(size_t i = 1; i < topology.size(); ++i) {
+		std::vector<float> layerBiases(topology[i], 0.1f);
+		this->biases.push_back(layerBiases);
+	}
 }

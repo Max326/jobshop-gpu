@@ -64,8 +64,9 @@ public:
 	}
 
 	void GenerateWeights();
+	void GenerateBiases();
 
-private:
+public:
 	struct CudaData;					 // Forward declaration
 	std::unique_ptr<CudaData> cudaData;	 // Enkapsulacja danych CUDA
 
