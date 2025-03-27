@@ -253,3 +253,18 @@ std::vector<float> NeuralNetwork::Forward(const std::vector<float> &input) {
 
 	return output;
 }
+
+void NeuralNetwork::GenerateWeights() {
+	// if(weights != nullptr) {
+	// this->weights = *weights;
+	// } else {
+	for(size_t i = 1; i < topology.size(); ++i) {
+		std::vector<float> layerWeights(topology[i] * topology[i - 1]);
+		float range = sqrt(6.0f / (topology[i - 1] + topology[i]));	 // Xavier initialization
+		for(float &weight: layerWeights) {
+			weight = (rand() / (float)RAND_MAX) * 2 * range - range;
+		}
+		this->weights.push_back(layerWeights);
+	}
+	// }
+}

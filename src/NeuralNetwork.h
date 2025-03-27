@@ -63,6 +63,8 @@ public:
 		biases = j["biases"].get<std::vector<std::vector<float>>>();
 	}
 
+	void GenerateWeights();
+
 private:
 	struct CudaData;					 // Forward declaration
 	std::unique_ptr<CudaData> cudaData;	 // Enkapsulacja danych CUDA

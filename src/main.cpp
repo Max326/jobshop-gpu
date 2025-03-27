@@ -26,6 +26,9 @@ int main() {
 
 		std::vector<int> topology = {2, 2, 1};	// Przykładowa topologia sieci
 
+		NeuralNetwork nn(topology);
+		nn.GenerateWeights();
+
 		std::vector<std::vector<float>> weights = {
 			{0.1, 0.2, 0.3, 0.4},
 			{0.5, 0.6},
@@ -43,6 +46,8 @@ int main() {
 		// std::vector<float> output = nn.Forward({0.1, 0.2});
 
 		// std::cout << "NN Result: " << output[0] << std::endl;
+
+		
 
 		if(generateRandomNNSetup) {
 			NeuralNetwork exampleNeuralNetwork(topology);
