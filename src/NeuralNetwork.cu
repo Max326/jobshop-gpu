@@ -56,19 +56,27 @@ __device__ float ScaleTanh2(float x) {
 	}
 }
 
+
+// Example optimized kernel using shared memory
 __global__ void ForwardPassKernel(const float *input, int inputSize,
 								  const float *weights, const float *biases,
 								  float *output, int outputSize) {
+	extern __shared__ float shared_input[];
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	if(idx >= outputSize) return;  // Zabezpieczenie!
 
-	float sum = 0.0f;
+	// Load input into shared memory (coalesced access)
+	if(threadIdx.x < inputSize) {
+		shared_input[threadIdx.x] = input[threadIdx.x];
+	}
+	__syncthreads();
+
 	if(idx < outputSize) {
+		float sum = 0.0f;
 		for(int i = 0; i < inputSize; ++i) {
-			sum += input[i] * weights[idx * inputSize + i];
+			sum += shared_input[i] * weights[idx * inputSize + i];
 		}
 		sum += biases[idx];
-		output[idx] = ScaleTanh2(sum);	// Zastosowanie funkcji aktywacji
+		output[idx] = ScaleTanh2(sum);
 	}
 }
 
@@ -221,7 +229,10 @@ std::vector<float> NeuralNetwork::Forward(const std::vector<float> &input) {
 		// Launch the kernel
 		int threadsPerBlock = 256;
 		int blocksPerGrid = (out_size + threadsPerBlock - 1) / threadsPerBlock;
-		ForwardPassKernel<<<blocksPerGrid, threadsPerBlock>>>(
+
+		size_t sharedMemSize = in_size * sizeof(float); // in_size = current input layer size
+
+		ForwardPassKernel<<<blocksPerGrid, threadsPerBlock, sharedMemSize>>>(
 			current_input, in_size,
 			cudaData->d_weights + weight_offset,
 			cudaData->d_biases + bias_offset,
