@@ -22,8 +22,10 @@ public:
 	JobShopHeuristic(NeuralNetwork&& net) : neuralNetwork(std::move(net)) {}
 
 	struct Solution {
-		double makespan;
 		std::vector<std::vector<int>> schedule;	 // Harmonogram dla każdej maszyny
+		std::vector<int> machineEndTimes;		 // Time when each machine becomes free
+		std::vector<int> jobEndTimes;			 // Time when each job's last operation finishes
+		int makespan = 0;
 	};
 
 	Solution Solve(const JobShopData& data);

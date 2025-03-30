@@ -51,6 +51,9 @@ JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
 	solution.makespan = 0;
 	solution.schedule.resize(data.numMachines);
 
+	solution.machineEndTimes.resize(data.numMachines, 0);
+	solution.jobEndTimes.resize(data.numJobs, 0);  // Add this line
+
 	// Kopiowanie danych, aby nie modyfikować oryginału
 	JobShopData modifiedData = data;
 
@@ -120,14 +123,33 @@ std::vector<float> JobShopHeuristic::ExtractFeatures(const JobShopData& data, in
 	return features;
 }
 
-void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operationId, int machineId, Solution& solution) {
-	// Usuń zaplanowaną operację z joba
-	data.jobs[jobId].operations.pop_back();
+// void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operationId,
+// 									  int machineId, Solution& solution) {
+// 	// Usuń zaplanowaną operację z joba
+// 	data.jobs[jobId].operations.pop_back();
 
-	// Dodaj operację do harmonogramu maszyny
+// 	// Dodaj operację do harmonogramu maszyny
+// 	solution.schedule[machineId].push_back(operationId);
+
+// 	// Aktualizuj makespan
+// 	int operationTime = data.processingTimes[operationId][machineId];
+// 	solution.makespan += operationTime;
+// }
+
+void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operationId,
+									  int machineId, Solution& solution) {
+	// Calculate start time (max of job's and machine's availability)
+	int startTime = std::max(solution.jobEndTimes[jobId],
+							 solution.machineEndTimes[machineId]);
+	int processingTime = data.processingTimes[operationId][machineId];
+	int endTime = startTime + processingTime;
+
+	// Update machine and job end times
+	solution.machineEndTimes[machineId] = endTime;
+	solution.jobEndTimes[jobId] = endTime;
+	solution.makespan = std::max(solution.makespan, endTime);
+
+	// Schedule the operation
 	solution.schedule[machineId].push_back(operationId);
-
-	// Aktualizuj makespan
-	int operationTime = data.processingTimes[operationId][machineId];
-	solution.makespan += operationTime;
+	data.jobs[jobId].operations.pop_back();	 // Remove the scheduled operation
 }

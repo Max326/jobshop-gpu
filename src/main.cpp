@@ -24,7 +24,7 @@ int main() {
 		// Konfiguracja heurystyki
 		// std::vector<int> topology = {3, 16, 1};	 // Przykładowa topologia sieci
 
-		std::vector<int> topology = {2, 1000, 16, 16, 16, 1};	 // Przykładowa topologia sieci
+		std::vector<int> topology = {2, 32, 16, 1};	 // Przykładowa topologia sieci
 
 		// nnFiller.SaveToJson("weights_and_biases");
 
