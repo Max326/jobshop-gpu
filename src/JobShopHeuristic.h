@@ -32,6 +32,8 @@ public:
 
 	NeuralNetwork neuralNetwork;
 
+	void PrintSchedule(const Solution& solution, const JobShopData& data);
+
 private:
 	// JobShopHeuristic(NeuralNetwork&& net) : neuralNetwork(std::move(net)) {}
 

@@ -153,3 +153,37 @@ void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operatio
 	solution.schedule[machineId].push_back(operationId);
 	data.jobs[jobId].operations.pop_back();	 // Remove the scheduled operation
 }
+
+void JobShopHeuristic::PrintSchedule(const Solution& solution, const JobShopData& data) {
+    std::cout << "\n=== FINAL SCHEDULE ===" << std::endl;
+    
+    for (int machineId = 0; machineId < solution.schedule.size(); ++machineId) {
+        std::cout << "M" << machineId << ": [";
+        
+        int currentTime = 0;
+        bool firstOperation = true;
+        
+        for (int opId : solution.schedule[machineId]) {
+            int opTime = data.processingTimes[opId][machineId];
+            
+            // Add waiting time (if any)
+            if (currentTime < solution.machineEndTimes[machineId] - opTime) {
+                int waitTime = solution.machineEndTimes[machineId] - opTime - currentTime;
+                if (!firstOperation) std::cout << "][";
+                std::cout << "w-" << waitTime;
+                currentTime += waitTime;
+                firstOperation = false;
+            }
+            
+            // Add operation
+            if (!firstOperation) std::cout << "][";
+            std::cout << "o" << opId << "-" << opTime;
+            currentTime += opTime;
+            firstOperation = false;
+        }
+        
+        std::cout << "]" << std::endl;
+    }
+    
+    std::cout << "Makespan: " << solution.makespan << "\n" << std::endl;
+}
