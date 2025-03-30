@@ -17,11 +17,15 @@ public:
 
 	// Konstruktor ładujący z pliku
 	JobShopHeuristic(const std::string& filename)
-		: JobShopHeuristic(InitializeNetworkFromFile(filename)) {}
+		: neuralNetwork(InitializeNetworkFromFile(filename)) {}
+
+	JobShopHeuristic(NeuralNetwork&& net) : neuralNetwork(std::move(net)) {}
 
 	struct Solution {
-		double makespan;
 		std::vector<std::vector<int>> schedule;	 // Harmonogram dla każdej maszyny
+		std::vector<int> machineEndTimes;		 // Time when each machine becomes free
+		std::vector<int> jobEndTimes;			 // Time when each job's last operation finishes
+		int makespan = 0;
 	};
 
 	Solution Solve(const JobShopData& data);
@@ -29,7 +33,7 @@ public:
 	NeuralNetwork neuralNetwork;
 
 private:
-	JobShopHeuristic(NeuralNetwork&& net) : neuralNetwork(std::move(net)) {}
+	// JobShopHeuristic(NeuralNetwork&& net) : neuralNetwork(std::move(net)) {}
 
 	static NeuralNetwork InitializeNetworkFromFile(const std::string& filename);
 

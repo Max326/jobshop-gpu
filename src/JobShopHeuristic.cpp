@@ -24,29 +24,25 @@ NeuralNetwork JobShopHeuristic::InitializeNetworkFromFile(const std::string& fil
 		throw std::runtime_error("Cannot open file: " + full_path);
 	}
 
-	// Wczytaj dane JSON
-	json j;
 	try {
+		json j;
 		in >> j;
 		in.close();
-	} catch(const json::exception& e) {
-		throw std::runtime_error("JSON parsing error: " + std::string(e.what()));
-	}
 
-	// Wyodrębnij dane
-	try {
 		std::vector<int> loaded_topology = j["topology"];
 		auto weights = j["weights"].get<std::vector<std::vector<float>>>();
 		auto biases = j["biases"].get<std::vector<std::vector<float>>>();
 
-		// Walidacja danych
+		std::cout << "second weight: " << weights[1][2] << std::endl;
+		std::cout << "second bias: " << biases[1][0] << std::endl;
+
 		if(loaded_topology.empty() || weights.empty() || biases.empty()) {
 			throw std::runtime_error("Invalid network data in file");
 		}
 
 		return NeuralNetwork(loaded_topology, &weights, &biases);
-	} catch(const json::exception& e) {
-		throw std::runtime_error("Invalid JSON structure: " + std::string(e.what()));
+	} catch(const std::exception& e) {
+		throw std::runtime_error("JSON parsing error: " + std::string(e.what()));
 	}
 }
 
@@ -54,6 +50,9 @@ JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
 	Solution solution;
 	solution.makespan = 0;
 	solution.schedule.resize(data.numMachines);
+
+	solution.machineEndTimes.resize(data.numMachines, 0);
+	solution.jobEndTimes.resize(data.numJobs, 0);  // Add this line
 
 	// Kopiowanie danych, aby nie modyfikować oryginału
 	JobShopData modifiedData = data;
@@ -76,13 +75,14 @@ JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
 
 				// std::cout << "Features: " << features[0] << ", " << features[1] << ", " << features[2] << std::endl;
 
+				features.resize(2);
+
 				// Oceń decyzję za pomocą sieci neuronowej
-				std::vector<float> output;
-				neuralNetwork.Forward(features, output);
+				std::vector<float> output = neuralNetwork.Forward(features);
 
 				// Add to Solve(), after neuralNetwork.Forward()
-				std::cout << "Features: " << features[0] << "," << features[1] << "," << features[2]
-						  << " -> Score: " << output[0] << std::endl;
+				// std::cout << "Features: " << features[0] << "," << features[1] << "," << features[2]
+				//   << " -> Score: " << output[0] << std::endl;
 
 				float score = output[0];
 
@@ -123,14 +123,33 @@ std::vector<float> JobShopHeuristic::ExtractFeatures(const JobShopData& data, in
 	return features;
 }
 
-void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operationId, int machineId, Solution& solution) {
-	// Usuń zaplanowaną operację z joba
-	data.jobs[jobId].operations.pop_back();
+// void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operationId,
+// 									  int machineId, Solution& solution) {
+// 	// Usuń zaplanowaną operację z joba
+// 	data.jobs[jobId].operations.pop_back();
 
-	// Dodaj operację do harmonogramu maszyny
+// 	// Dodaj operację do harmonogramu maszyny
+// 	solution.schedule[machineId].push_back(operationId);
+
+// 	// Aktualizuj makespan
+// 	int operationTime = data.processingTimes[operationId][machineId];
+// 	solution.makespan += operationTime;
+// }
+
+void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operationId,
+									  int machineId, Solution& solution) {
+	// Calculate start time (max of job's and machine's availability)
+	int startTime = std::max(solution.jobEndTimes[jobId],
+							 solution.machineEndTimes[machineId]);
+	int processingTime = data.processingTimes[operationId][machineId];
+	int endTime = startTime + processingTime;
+
+	// Update machine and job end times
+	solution.machineEndTimes[machineId] = endTime;
+	solution.jobEndTimes[jobId] = endTime;
+	solution.makespan = std::max(solution.makespan, endTime);
+
+	// Schedule the operation
 	solution.schedule[machineId].push_back(operationId);
-
-	// Aktualizuj makespan
-	int operationTime = data.processingTimes[operationId][machineId];
-	solution.makespan += operationTime;
+	data.jobs[jobId].operations.pop_back();	 // Remove the scheduled operation
 }

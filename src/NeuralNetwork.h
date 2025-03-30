@@ -3,9 +3,9 @@
 
 #pragma once
 #include <filesystem>
+#include <iostream>
 #include <nlohmann/json.hpp>
 #include <vector>
-#include <iostream>
 
 #include "FileManager.h"
 
@@ -18,7 +18,16 @@ public:
 				  const std::vector<std::vector<float>>* weights = nullptr,
 				  const std::vector<std::vector<float>>* biases = nullptr);
 
-	void Forward(const std::vector<float>& input, std::vector<float>& output);
+	NeuralNetwork(NeuralNetwork&& other) noexcept;
+	NeuralNetwork& operator=(NeuralNetwork&& other) noexcept;
+
+	NeuralNetwork(const NeuralNetwork&) = delete;
+	NeuralNetwork& operator=(const NeuralNetwork&) = delete;
+
+	~NeuralNetwork();
+
+	// void Forward(const std::vector<float>& input, std::vector<float>& output);
+	std::vector<float> Forward(const std::vector<float>& input);
 
 	void SaveToJson(const std::string& filename) const {
 		FileManager::EnsureDataDirExists();
@@ -54,10 +63,27 @@ public:
 		biases = j["biases"].get<std::vector<std::vector<float>>>();
 	}
 
-private:
+	void GenerateWeights();
+	void GenerateBiases();
+
+public:
+	struct CudaData;					 // Forward declaration
+	std::unique_ptr<CudaData> cudaData;	 // Enkapsulacja danych CUDA
+
 	std::vector<int> topology;
 	std::vector<std::vector<float>> weights;
 	std::vector<std::vector<float>> biases;
+	std::vector<size_t> layerOffsets;
+	std::vector<size_t> biasOffsets;
+
+#define CUDA_CHECK(call)                                                                                \
+	{                                                                                                   \
+		cudaError_t err = (call);                                                                       \
+		if(err != cudaSuccess) {                                                                        \
+			fprintf(stderr, "CUDA error at %s:%d - %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
+			exit(1);                                                                                    \
+		}                                                                                               \
+	}
 };
 
 #endif	// NEURAL_NETWORK_H

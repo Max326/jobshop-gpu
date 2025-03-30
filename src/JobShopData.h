@@ -96,8 +96,8 @@ public:
 
 inline JobShopData GenerateData() {
 	JobShopData data;
-	data.numMachines = 5;
-	data.numJobs = 10;
+	data.numMachines = 30;
+	data.numJobs = 30;
 	data.numOperations = 10;
 
 	// Inicjalizacja jobów

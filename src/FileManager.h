@@ -8,7 +8,7 @@
 
 class FileManager {
 public:
-    static inline const std::string DATA_DIR = "data";
+    static inline const std::string DATA_DIR = "../data";
     static inline const std::string DATA_EXT = ".json";
     
     static std::string GetFullPath(const std::string& filename) {
