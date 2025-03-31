@@ -7,7 +7,7 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <string>
-#include <unordered_set>  
+#include <unordered_set>
 #include <vector>
 
 #include "FileManager.h"
@@ -118,31 +118,58 @@ inline JobShopData GenerateData() {
 	data.opFlexibilityRange = {1, 3};	// 1 to 3 eligible machines per operation
 	data.opDurationRange = {1, 10};		// Processing time from 1 to 10
 	data.numOpTypes = data.opCountPerJobRange.second;
-	
+
 	std::srand(std::time(0));
 
 	const int operationRangeRemainder = data.opCountPerJobRange.second - data.opCountPerJobRange.first + 1;
+	const int flexibilityRangeRemainder = data.opFlexibilityRange.second - data.opFlexibilityRange.first + 1;
+	const int durationRangeRemainder = data.opDurationRange.second - data.opDurationRange.first + 1;
+
+	// 1. Generate processing times only for eligible machines
+	data.processingTimes.resize(data.numOpTypes);
+
+	data.processingTimes.resize(data.numOpTypes);
+	for(int o = 0; o < data.numOpTypes; ++o) {
+		// Create shuffled machine list for this operation type
+		std::vector<int> machines(data.numMachines);
+		std::iota(machines.begin(), machines.end(), 0);
+		std::random_shuffle(machines.begin(), machines.end());
+
+		// Select 1-3 eligible machines with random times
+		int numEligible = data.opFlexibilityRange.first + rand() % flexibilityRangeRemainder;
+
+		data.processingTimes[o].resize(data.numMachines, 0);  // Initialize all to 0 (ineligible)
+
+		for(int m = 0; m < numEligible; ++m) {
+			data.processingTimes[o][m] = data.opDurationRange.first + rand() % durationRangeRemainder;
+		}
+	}
 
 	// Inicjalizacja jobów
 	for(int j = 0; j < data.numJobs; ++j) {
 		Job job;
 		job.id = j;
+
+		// Create shuffled operation types
+        std::vector<int> opTypes(data.numOpTypes);
+        std::iota(opTypes.begin(), opTypes.end(), 0);
+        std::random_shuffle(opTypes.begin(), opTypes.end());
+
+		
 		for(int o = 0; o < data.opCountPerJobRange.first + rand() % operationRangeRemainder; ++o) {
 			Operation op;
 			op.type = (rand() % data.numOpTypes);  // Random operation type
-
-			int flexibilityRangeRemainder = data.opFlexibilityRange.second - data.opFlexibilityRange.first + 1;
 			int numEligibleMachines = data.opFlexibilityRange.first + rand() % flexibilityRangeRemainder;
 
-			for (int m = 0; m < numEligibleMachines; ++m) {
-				std::unordered_set<int> selectedMachines; // Track selected machines
+			for(int m = 0; m < numEligibleMachines; ++m) {
+				std::unordered_set<int> selectedMachines;  // Track selected machines
 				int machineId;
 				do {
-					machineId = rand() % data.numMachines; // Randomly select a machine
-				} while (selectedMachines.find(machineId) != selectedMachines.end()); // Ensure it's not already selected
-			
-				selectedMachines.insert(machineId); // Mark this machine as selected
-				op.eligibleMachines.push_back(machineId); // Assign the machine
+					machineId = rand() % data.numMachines;	// Randomly select a machine
+				} while(selectedMachines.find(machineId) != selectedMachines.end());  // Ensure it's not already selected
+
+				selectedMachines.insert(machineId);		   // Mark this machine as selected
+				op.eligibleMachines.push_back(machineId);  // Assign the machine
 			}
 
 			job.operations.push_back(op);
@@ -152,16 +179,6 @@ inline JobShopData GenerateData() {
 		// TODO: fix eligible machines for each operation
 		// TODO: add rules to solve function
 		// TODO: fix data loading
-	}
-
-	// Inicjalizacja macierzy czasu przetwarzania
-	data.processingTimes.resize(data.numOpTypes, std::vector<int>(data.numMachines, 0));
-	for(int o = 0; o < data.numOpTypes; ++o) {
-		for(int m = 0; m < data.numMachines; ++m) {
-			int durationRangeRemainder = data.opDurationRange.second - data.opDurationRange.first + 1;
-			data.processingTimes[o][m] = data.opDurationRange.first + rand() % durationRangeRemainder;
-			// data.processingTimes[o][m] = 1 + rand() % 10;  // Losowy czas przetwarzania od 1 do 10
-		}
 	}
 
 	return data;
