@@ -51,38 +51,59 @@ JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
 	solution.makespan = 0;
 	solution.schedule.resize(data.numMachines);
 
-	solution.machineEndTimes.resize(data.numMachines, 0);
-	solution.jobEndTimes.resize(data.numJobs, 0);  // Add this line
+	// solution.machineEndTimes.resize(data.numMachines, 0);
 
-	// Kopiowanie danych, aby nie modyfikować oryginału
 	JobShopData modifiedData = data;
 
 	while(true) {
 		// Znajdź dostępne operacje
-		bool allScheduled = true;
 		float bestScore = -FLT_MAX;
 		int bestJobId = -1, bestOperationId = -1, bestMachineId = -1;
 
 		for(int jobId = 0; jobId < modifiedData.numJobs; ++jobId) {
-			if(modifiedData.jobs[jobId].operations.empty()) continue;
+			// if(modifiedData.jobs[jobId].operations.empty()) continue;
+			auto& job = modifiedData.jobs[jobId];
 
-			int operationId = modifiedData.jobs[jobId].operations.back();
+			// Skip if no operations left or next operation isn't ready
+			if(job.nextOpIndex >= job.operations.size()) continue;
+
+			// int operationId = job.operations[job.nextOpIndex];	// Get NEXT operation
+			const auto& operation = job.operations[job.nextOpIndex];
+
+			// for (const auto& [machineId] : operation.eligibleMachines) {
+			// }
+
+
 			for(int machineId = 0; machineId < modifiedData.numMachines; ++machineId) {
-				if(modifiedData.processingTimes[operationId][machineId] == 0) continue;
+				if(modifiedData.processingTimes[operationId][machineId] == 0) continue;	 // TODO: add more rules
+
+				// Check machine availability
+				int machineAvailableTime = solution.schedule[machineId].empty()
+											   ? 0
+											   : solution.schedule[machineId].back().endTime;
+
+				// Operation can only start after previous operation in job completes
+				int startTime = std::max(machineAvailableTime, job.lastOpEndTime);
+
+				// TODO: rule 1: if machine is busy, skip
+				// if(solution.machineEndTimes[machineId] > solution.jobEndTimes[jobId]) {
+				// 	continue;  // Maszyna zajęta
+				// }
+
+				// TODO: rule 2: check for 'holes' in the schedule
+				// TODO: rule 3: check if machine matches operation type
+				// TODO: rule 4:
 
 				// Przygotuj wektor cech
-				std::vector<float> features = ExtractFeatures(modifiedData, jobId, operationId, machineId);
+				int waitTime = machineAvailableTime - startTime;
+
+				std::vector<float> features = ExtractFeatures(modifiedData, jobId, operationId, machineId, waitTime);
 
 				// std::cout << "Features: " << features[0] << ", " << features[1] << ", " << features[2] << std::endl;
 
 				features.resize(2);
 
-				// Oceń decyzję za pomocą sieci neuronowej
 				std::vector<float> output = neuralNetwork.Forward(features);
-
-				// Add to Solve(), after neuralNetwork.Forward()
-				// std::cout << "Features: " << features[0] << "," << features[1] << "," << features[2]
-				//   << " -> Score: " << output[0] << std::endl;
 
 				float score = output[0];
 
@@ -104,86 +125,79 @@ JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
 	return solution;
 }
 
-std::vector<float> JobShopHeuristic::ExtractFeatures(const JobShopData& data, int jobId, int operationId, int machineId) {
+std::vector<float> JobShopHeuristic::ExtractFeatures(const JobShopData& data, int jobId, int operationId, int machineId, int waitTime) {
 	std::vector<float> features;
 
-	// Czas przetwarzania operacji na maszynie
 	features.push_back(static_cast<float>(data.processingTimes[operationId][machineId]));
 
-	// Liczba pozostałych operacji w jobie
 	features.push_back(static_cast<float>(data.jobs[jobId].operations.size()));
 
-	// Obciążenie maszyny
-	int machineLoad = 0;
-	for(const auto& op: data.processingTimes) {
-		machineLoad += op[machineId];
-	}
-	features.push_back(static_cast<float>(machineLoad));
+	features.push_back(static_cast<float>(waitTime));
 
 	return features;
 }
 
-// void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operationId,
-// 									  int machineId, Solution& solution) {
-// 	// Usuń zaplanowaną operację z joba
-// 	data.jobs[jobId].operations.pop_back();
-
-// 	// Dodaj operację do harmonogramu maszyny
-// 	solution.schedule[machineId].push_back(operationId);
-
-// 	// Aktualizuj makespan
-// 	int operationTime = data.processingTimes[operationId][machineId];
-// 	solution.makespan += operationTime;
-// }
-
 void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operationId,
 									  int machineId, Solution& solution) {
-	// Calculate start time (max of job's and machine's availability)
-	int startTime = std::max(solution.jobEndTimes[jobId],
-							 solution.machineEndTimes[machineId]);
+	auto& job = data.jobs[jobId];
+
+	// Get machine's last operation end time (0 if no operations yet)
+	int machineAvailableTime = solution.schedule[machineId].empty()
+								   ? 0
+								   : solution.schedule[machineId].back().endTime;
+
+	// Start time is the later of machine or job availability
+	// int startTime = std::max(solution.jobEndTimes[jobId],
+	//  solution.machineEndTimes[machineId]);
+
+	int startTime = std::max(machineAvailableTime, job.lastOpEndTime);	// TODO: source the last operation end time from the schedule
+
 	int processingTime = data.processingTimes[operationId][machineId];
 	int endTime = startTime + processingTime;
 
-	// Update machine and job end times
-	solution.machineEndTimes[machineId] = endTime;
-	solution.jobEndTimes[jobId] = endTime;
+	solution.schedule[machineId].push_back({jobId, operationId, startTime, endTime});
+
+	job.lastOpEndTime = endTime;  // Update job's last operation end time
+	job.nextOpIndex++;
+
 	solution.makespan = std::max(solution.makespan, endTime);
 
-	// Schedule the operation
-	solution.schedule[machineId].push_back(operationId);
-	data.jobs[jobId].operations.pop_back();	 // Remove the scheduled operation
+	// data.jobs[jobId].operations.pop_back();	 // Remove the scheduled operation
 }
 
 void JobShopHeuristic::PrintSchedule(const Solution& solution, const JobShopData& data) {
     std::cout << "\n=== FINAL SCHEDULE ===" << std::endl;
-    
+
     for (int machineId = 0; machineId < solution.schedule.size(); ++machineId) {
         std::cout << "M" << machineId << ": [";
-        
+
         int currentTime = 0;
-        bool firstOperation = true;
-        
-        for (int opId : solution.schedule[machineId]) {
-            int opTime = data.processingTimes[opId][machineId];
-            
-            // Add waiting time (if any)
-            if (currentTime < solution.machineEndTimes[machineId] - opTime) {
-                int waitTime = solution.machineEndTimes[machineId] - opTime - currentTime;
-                if (!firstOperation) std::cout << "][";
-                std::cout << "w-" << waitTime;
-                currentTime += waitTime;
-                firstOperation = false;
+        bool firstElement = true;
+        const auto& machineSchedule = solution.schedule[machineId];
+
+        if (machineSchedule.empty()) {
+            std::cout << "idle";
+        } else {
+            for (const auto& scheduledOp : machineSchedule) {
+                // Add waiting time before operation
+                if (scheduledOp.startTime > currentTime) {
+                    if (!firstElement) std::cout << "][";
+                    std::cout << "w-" << (scheduledOp.startTime - currentTime);
+                    firstElement = false;
+                    currentTime = scheduledOp.startTime;
+                }
+
+                // Add operation with job ID
+                if (!firstElement) std::cout << "][";
+                std::cout << "j" << scheduledOp.jobId << "-o" << scheduledOp.opId 
+                          << "-" << (scheduledOp.endTime - scheduledOp.startTime);
+                currentTime = scheduledOp.endTime;
+                firstElement = false;
             }
-            
-            // Add operation
-            if (!firstOperation) std::cout << "][";
-            std::cout << "o" << opId << "-" << opTime;
-            currentTime += opTime;
-            firstOperation = false;
         }
-        
+
         std::cout << "]" << std::endl;
     }
-    
+
     std::cout << "Makespan: " << solution.makespan << "\n" << std::endl;
 }

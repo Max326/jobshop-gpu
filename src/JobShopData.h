@@ -2,19 +2,26 @@
 #define JOB_SHOP_DATA_H
 
 #pragma once
-
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <unordered_set>  
 #include <vector>
 
 #include "FileManager.h"
 
+struct Operation {
+	int type;
+	std::vector<int> eligibleMachines;	// List of machines that can perform this operation
+};
+
 struct Job {
 	int id;
-	std::vector<int> operations;  // Lista typów operacji
+	std::vector<Operation> operations;	// Ordered list of operation IDs
+	int nextOpIndex = 0;				// Tracks which operation to schedule next
+	int lastOpEndTime = 0;				// When the previous operation finished
 };
 
 struct Machine {
@@ -28,9 +35,17 @@ public:
 
 	int numMachines;
 	int numJobs;
-	int numOperations;
+	int numOpTypes;	 // number of operation types
 	std::vector<Job> jobs;
 	std::vector<std::vector<int>> processingTimes;	// Macierz czasu przetwarzania [operacja][maszyna]
+
+	// TODO: implement
+	bool operInJobMultiplication = false;
+
+	std::pair<int, int> jobCountRange;	  // Range of jobs
+	std::pair<int, int> opDurationRange;  // Operation processing time range
+	std::pair<int, int> opCountPerJobRange;
+	std::pair<int, int> opFlexibilityRange;	 // Range of eligible machines for each opearation
 
 	void SaveToJson(const std::string& filename) const {
 		FileManager::EnsureDataDirExists();
@@ -39,7 +54,7 @@ public:
 		json j;
 		j["numMachines"] = numMachines;
 		j["numJobs"] = numJobs;
-		j["numOperations"] = numOperations;
+		j["numOpTypes"] = numOpTypes;
 
 		j["jobs"] = json::array();
 		for(const auto& job: jobs) {
@@ -69,7 +84,7 @@ public:
 
 		numMachines = j["numMachines"];
 		numJobs = j["numJobs"];
-		numOperations = j["numOperations"];
+		numOpTypes = j["numOpTypes"];
 
 		jobs.clear();
 		for(const auto& item: j["jobs"]) {
@@ -85,8 +100,8 @@ public:
 	}
 
 	bool Validate() const {
-		if(numMachines <= 0 || numJobs <= 0 || numOperations <= 0) return false;
-		if(processingTimes.size() != numOperations) return false;
+		if(numMachines <= 0 || numJobs <= 0 || numOpTypes <= 0) return false;
+		if(processingTimes.size() != numOpTypes) return false;
 		for(const auto& row: processingTimes) {
 			if(row.size() != numMachines) return false;
 		}
@@ -98,23 +113,54 @@ inline JobShopData GenerateData() {
 	JobShopData data;
 	data.numMachines = 10;
 	data.numJobs = 10;
-	data.numOperations = 10;
+
+	data.opCountPerJobRange = {5, 10};	// 5 to 10 operations per job
+	data.opFlexibilityRange = {1, 3};	// 1 to 3 eligible machines per operation
+	data.opDurationRange = {1, 10};		// Processing time from 1 to 10
+	data.numOpTypes = data.opCountPerJobRange.second;
+	
+	std::srand(std::time(0));
+
+	const int operationRangeRemainder = data.opCountPerJobRange.second - data.opCountPerJobRange.first + 1;
 
 	// Inicjalizacja jobów
 	for(int j = 0; j < data.numJobs; ++j) {
 		Job job;
 		job.id = j;
-		for(int o = 0; o < 5 + rand() % 6; ++o) {					// Od 5 do 10 operacji na job
-			job.operations.push_back(rand() % data.numOperations);	// Losowy typ operacji
+		for(int o = 0; o < data.opCountPerJobRange.first + rand() % operationRangeRemainder; ++o) {
+			Operation op;
+			op.type = (rand() % data.numOpTypes);  // Random operation type
+
+			int flexibilityRangeRemainder = data.opFlexibilityRange.second - data.opFlexibilityRange.first + 1;
+			int numEligibleMachines = data.opFlexibilityRange.first + rand() % flexibilityRangeRemainder;
+
+			for (int m = 0; m < numEligibleMachines; ++m) {
+				std::unordered_set<int> selectedMachines; // Track selected machines
+				int machineId;
+				do {
+					machineId = rand() % data.numMachines; // Randomly select a machine
+				} while (selectedMachines.find(machineId) != selectedMachines.end()); // Ensure it's not already selected
+			
+				selectedMachines.insert(machineId); // Mark this machine as selected
+				op.eligibleMachines.push_back(machineId); // Assign the machine
+			}
+
+			job.operations.push_back(op);
 		}
 		data.jobs.push_back(job);
+
+		// TODO: fix eligible machines for each operation
+		// TODO: add rules to solve function
+		// TODO: fix data loading
 	}
 
 	// Inicjalizacja macierzy czasu przetwarzania
-	data.processingTimes.resize(data.numOperations, std::vector<int>(data.numMachines, 0));
-	for(int o = 0; o < data.numOperations; ++o) {
+	data.processingTimes.resize(data.numOpTypes, std::vector<int>(data.numMachines, 0));
+	for(int o = 0; o < data.numOpTypes; ++o) {
 		for(int m = 0; m < data.numMachines; ++m) {
-			data.processingTimes[o][m] = 1 + rand() % 10;  // Losowy czas przetwarzania od 1 do 10
+			int durationRangeRemainder = data.opDurationRange.second - data.opDurationRange.first + 1;
+			data.processingTimes[o][m] = data.opDurationRange.first + rand() % durationRangeRemainder;
+			// data.processingTimes[o][m] = 1 + rand() % 10;  // Losowy czas przetwarzania od 1 do 10
 		}
 	}
 

@@ -22,9 +22,14 @@ public:
 	JobShopHeuristic(NeuralNetwork&& net) : neuralNetwork(std::move(net)) {}
 
 	struct Solution {
-		std::vector<std::vector<int>> schedule;	 // Harmonogram dla każdej maszyny
-		std::vector<int> machineEndTimes;		 // Time when each machine becomes free
-		std::vector<int> jobEndTimes;			 // Time when each job's last operation finishes
+		struct OperationSchedule {
+			int jobId;       // Job this operation belongs to
+			int opId;        // Operation ID
+			int startTime;   // Time when the operation starts
+			int endTime;     // Time when the operation finishes
+		};
+
+		std::vector<std::vector<OperationSchedule>> schedule;	 // Every machine's schedule
 		int makespan = 0;
 	};
 
@@ -39,7 +44,7 @@ private:
 
 	static NeuralNetwork InitializeNetworkFromFile(const std::string& filename);
 
-	std::vector<float> ExtractFeatures(const JobShopData& data, int jobId, int operationId, int machineId);
+	std::vector<float> ExtractFeatures(const JobShopData& data, int jobId, int operationId, int machineId, int waitTime);
 	void UpdateSchedule(JobShopData& data, int jobId, int operationId, int machineId, Solution& solution);
 };
 
