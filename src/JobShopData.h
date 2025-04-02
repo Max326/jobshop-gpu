@@ -171,6 +171,7 @@ inline JobShopData GenerateData() {
 		for(int m = 0; m < numEligibleMachines; ++m) {
 			// random processing time for random eligible machine
 			data.processingTimes[o][machines[m]] = data.opDurationRange.first + rand() % durationRangeRemainder;
+			// TODO: MAKE SURE EACH MACHINE IS ELIGIBLE
 		}
 	}
 

@@ -198,7 +198,7 @@ void JobShopHeuristic::PrintSchedule(const Solution& solution, const JobShopData
 
 				// Add operation with job ID
 				if(!firstElement) std::cout << "][";
-				std::cout << "j" << scheduledOp.jobId << "-o" << scheduledOp.opId
+				std::cout << "t=" << scheduledOp.startTime << ",j" << scheduledOp.jobId << "-o" << scheduledOp.opId
 						  << "-" << (scheduledOp.endTime - scheduledOp.startTime);
 				currentTime = scheduledOp.endTime;
 				firstElement = false;

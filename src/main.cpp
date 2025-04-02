@@ -8,8 +8,10 @@
 int main() {
 	srand(time(0));
 
-	bool generateRandomJobs = false;
-	bool generateRandomNNSetup = true;
+	const bool generateRandomJobs = true;
+	const bool generateRandomNNSetup = true;
+
+	const std::vector<int> topology = {3, 32, 16, 1};  // TODO: implement dynamic NN input size
 
 	try {
 		JobShopData data;
@@ -21,19 +23,18 @@ int main() {
 			data.LoadFromJson("jobshop_data");
 		}
 
-		std::vector<int> topology = {3, 32, 16, 1};	 // TODO: implement dynamic NN input size
-
-		// NeuralNetwork nn(topology, &weights, &biases);
-
-		NeuralNetwork nnFiller(topology);
+		NeuralNetwork nn;
 
 		if(generateRandomNNSetup) {
-			nnFiller.SaveToJson("weights_and_biases");
-			// JobShopHeuristic heuristic(std::move(nnFiller));
+			nn = NeuralNetwork(topology); // Generate new
+            nn.SaveToJson("weights_and_biases");
 		} else {
-			nnFiller.LoadFromJson("weights_and_biases");
+            nn.LoadFromJson("weights_and_biases"); // Load existing
 		}
-		JobShopHeuristic heuristic("weights_and_biases");
+
+		JobShopHeuristic heuristic(std::move(nn)); // Transfer ownership
+		
+		// JobShopHeuristic heuristic("weights_and_biases");
 
 		JobShopHeuristic::Solution solution = heuristic.Solve(data);
 

@@ -14,71 +14,7 @@ struct NeuralNetwork::CudaData {
 	float *d_output = nullptr;
 };
 
-// Konstruktor przenoszący
-NeuralNetwork::NeuralNetwork(NeuralNetwork &&other) noexcept
-	: topology(std::move(other.topology)),
-	  weights(std::move(other.weights)),
-	  biases(std::move(other.biases)),
-	  layerOffsets(std::move(other.layerOffsets)),
-	  biasOffsets(std::move(other.biasOffsets)),
-	  cudaData(std::move(other.cudaData)) {
-	// Zabezpieczenie przed podwójnym zwolnieniem pamięci
-	other.cudaData.reset(nullptr);
-}
-
-// Operator przypisania przenoszącego
-NeuralNetwork &NeuralNetwork::operator=(NeuralNetwork &&other) noexcept {
-	if(this != &other) {
-		topology = std::move(other.topology);
-		weights = std::move(other.weights);
-		biases = std::move(other.biases);
-		layerOffsets = std::move(other.layerOffsets);
-		biasOffsets = std::move(other.biasOffsets);
-		cudaData = std::move(other.cudaData);
-	}
-	return *this;
-}
-
-// Funkcja aktywacji scaleTanh2
-__device__ float ScaleTanh2(float x) {
-	constexpr float shift = 3.5f;
-	constexpr float rshift = 1.0f / shift;
-	if(x >= 0.f) {
-		if(x >= shift)
-			return 1.0f + (x - shift) * 0.01;
-		float tmp = (x - shift) * rshift;
-		return 1.0f - tmp * tmp * tmp * tmp;
-	} else if(x >= -shift) {
-		float tmp = (x + shift) * rshift;
-		return -1.0f + tmp * tmp * tmp * tmp;
-	} else {
-		return -1.0f - (shift - x) * 0.01;
-	}
-}
-
-
-// Example optimized kernel using shared memory
-__global__ void ForwardPassKernel(const float *input, int inputSize,
-								  const float *weights, const float *biases,
-								  float *output, int outputSize) {
-	extern __shared__ float shared_input[];
-	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-
-	// Load input into shared memory (coalesced access)
-	if(threadIdx.x < inputSize) {
-		shared_input[threadIdx.x] = input[threadIdx.x];
-	}
-	__syncthreads();
-
-	if(idx < outputSize) {
-		float sum = 0.0f;
-		for(int i = 0; i < inputSize; ++i) {
-			sum += shared_input[i] * weights[idx * inputSize + i];
-		}
-		sum += biases[idx];
-		output[idx] = ScaleTanh2(sum);
-	}
-}
+NeuralNetwork::NeuralNetwork() : cudaData(std::make_unique<CudaData>()) {}
 
 NeuralNetwork::NeuralNetwork(const std::vector<int> &topology,
 							 const std::vector<std::vector<float>> *weights_ptr,
@@ -209,6 +145,72 @@ NeuralNetwork::~NeuralNetwork() {
 		cudaFree(cudaData->d_output);
 	}
 }
+
+// Konstruktor przenoszący
+NeuralNetwork::NeuralNetwork(NeuralNetwork &&other) noexcept
+	: topology(std::move(other.topology)),
+	  weights(std::move(other.weights)),
+	  biases(std::move(other.biases)),
+	  layerOffsets(std::move(other.layerOffsets)),
+	  biasOffsets(std::move(other.biasOffsets)),
+	  cudaData(std::move(other.cudaData)) {
+	// Zabezpieczenie przed podwójnym zwolnieniem pamięci
+	other.cudaData.reset(nullptr);
+}
+
+// Operator przypisania przenoszącego
+NeuralNetwork &NeuralNetwork::operator=(NeuralNetwork &&other) noexcept {
+	if(this != &other) {
+		topology = std::move(other.topology);
+		weights = std::move(other.weights);
+		biases = std::move(other.biases);
+		layerOffsets = std::move(other.layerOffsets);
+		biasOffsets = std::move(other.biasOffsets);
+		cudaData = std::move(other.cudaData);
+	}
+	return *this;
+}
+
+// Funkcja aktywacji scaleTanh2
+__device__ float ScaleTanh2(float x) {
+	constexpr float shift = 3.5f;
+	constexpr float rshift = 1.0f / shift;
+	if(x >= 0.f) {
+		if(x >= shift)
+			return 1.0f + (x - shift) * 0.01;
+		float tmp = (x - shift) * rshift;
+		return 1.0f - tmp * tmp * tmp * tmp;
+	} else if(x >= -shift) {
+		float tmp = (x + shift) * rshift;
+		return -1.0f + tmp * tmp * tmp * tmp;
+	} else {
+		return -1.0f - (shift - x) * 0.01;
+	}
+}
+
+// Example optimized kernel using shared memory
+__global__ void ForwardPassKernel(const float *input, int inputSize,
+								  const float *weights, const float *biases,
+								  float *output, int outputSize) {
+	extern __shared__ float shared_input[];
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+	// Load input into shared memory (coalesced access)
+	if(threadIdx.x < inputSize) {
+		shared_input[threadIdx.x] = input[threadIdx.x];
+	}
+	__syncthreads();
+
+	if(idx < outputSize) {
+		float sum = 0.0f;
+		for(int i = 0; i < inputSize; ++i) {
+			sum += shared_input[i] * weights[idx * inputSize + i];
+		}
+		sum += biases[idx];
+		output[idx] = ScaleTanh2(sum);
+	}
+}
+
 std::vector<float> NeuralNetwork::Forward(const std::vector<float> &input) {
 	// Copy input to device
 	CUDA_CHECK(cudaMemcpy(cudaData->d_input, input.data(),
@@ -230,7 +232,7 @@ std::vector<float> NeuralNetwork::Forward(const std::vector<float> &input) {
 		int threadsPerBlock = 256;
 		int blocksPerGrid = (out_size + threadsPerBlock - 1) / threadsPerBlock;
 
-		size_t sharedMemSize = in_size * sizeof(float); // in_size = current input layer size
+		size_t sharedMemSize = in_size * sizeof(float);	 // in_size = current input layer size
 
 		ForwardPassKernel<<<blocksPerGrid, threadsPerBlock, sharedMemSize>>>(
 			current_input, in_size,

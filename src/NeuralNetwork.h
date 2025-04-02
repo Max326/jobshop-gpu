@@ -14,6 +14,8 @@ class NeuralNetwork
 public:
 	using json = nlohmann::json;
 
+	NeuralNetwork();
+
 	NeuralNetwork(const std::vector<int>& topology,
 				  const std::vector<std::vector<float>>* weights = nullptr,
 				  const std::vector<std::vector<float>>* biases = nullptr);
@@ -21,8 +23,10 @@ public:
 	NeuralNetwork(NeuralNetwork&& other) noexcept;
 	NeuralNetwork& operator=(NeuralNetwork&& other) noexcept;
 
-	NeuralNetwork(const NeuralNetwork&) = delete;
-	NeuralNetwork& operator=(const NeuralNetwork&) = delete;
+	// NeuralNetwork(const NeuralNetwork&) = delete;
+	NeuralNetwork(const NeuralNetwork&) = default;
+
+	// NeuralNetwork& operator=(const NeuralNetwork&) = delete;
 
 	~NeuralNetwork();
 
@@ -61,6 +65,9 @@ public:
 		topology = j["topology"].get<std::vector<int>>();
 		weights = j["weights"].get<std::vector<std::vector<float>>>();
 		biases = j["biases"].get<std::vector<std::vector<float>>>();
+
+		Validate();			   // Perform validation checks
+		InitializeCudaData();  // Initialize CUDA data after loading
 	}
 
 	void GenerateWeights();
@@ -84,6 +91,14 @@ public:
 			exit(1);                                                                                    \
 		}                                                                                               \
 	}
+
+private:
+	void InitializeCudaData();
+	void Validate() const {
+		if(topology.empty()) {
+			throw std::invalid_argument("NeuralNetwork: Topology cannot be empty");
+		}
+	};
 };
 
 #endif	// NEURAL_NETWORK_H
