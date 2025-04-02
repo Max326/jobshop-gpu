@@ -24,10 +24,6 @@ struct Job {
 	int lastOpEndTime = 0;				// When the previous operation finished
 };
 
-struct Machine {
-	int id;
-};
-
 class JobShopData
 {
 public:
@@ -37,7 +33,7 @@ public:
 	int numJobs;
 	int numOpTypes;	 // number of operation types
 	std::vector<Job> jobs;
-	std::vector<std::vector<int>> processingTimes;	// Macierz czasu przetwarzania [operacja][maszyna]
+	std::vector<std::vector<int>> processingTimes;	// processing times for each operation type on each machine
 
 	// TODO: implement
 	bool operInJobMultiplication = false;
@@ -58,7 +54,21 @@ public:
 
 		j["jobs"] = json::array();
 		for(const auto& job: jobs) {
-			j["jobs"].push_back({{"id", job.id}, {"operations", job.operations}});
+			json jobJson;
+			jobJson["id"] = job.id;
+			jobJson["nextOpIndex"] = job.nextOpIndex;
+			jobJson["lastOpEndTime"] = job.lastOpEndTime;
+
+			json operationsJson = json::array();
+			for(const auto& op: job.operations) {
+				json opJson;
+				opJson["type"] = op.type;
+				opJson["eligibleMachines"] = op.eligibleMachines;
+				operationsJson.push_back(opJson);
+			}
+			jobJson["operations"] = operationsJson;
+
+			j["jobs"].push_back(jobJson);
 		}
 
 		j["processingTimes"] = processingTimes;
@@ -80,19 +90,38 @@ public:
 		}
 
 		json j;
-		in >> j;
-
-		numMachines = j["numMachines"];
-		numJobs = j["numJobs"];
-		numOpTypes = j["numOpTypes"];
-
-		jobs.clear();
-		for(const auto& item: j["jobs"]) {
-			jobs.push_back({item["id"].get<int>(),
-							item["operations"].get<std::vector<int>>()});
+		try {
+			in >> j;
+		} catch(const json::parse_error& e) {
+			throw std::runtime_error("JSON parse error: " + std::string(e.what()));
 		}
 
-		processingTimes = j["processingTimes"].get<std::vector<std::vector<int>>>();
+		try {
+			numMachines = j.at("numMachines").get<int>();
+			numJobs = j.at("numJobs").get<int>();
+			numOpTypes = j.at("numOpTypes").get<int>();
+
+			jobs.clear();
+			for(const auto& item: j.at("jobs")) {
+				Job job;
+				job.id = item.at("id").get<int>();
+				job.nextOpIndex = item.value("nextOpIndex", 0);		 // default to 0 if not present
+				job.lastOpEndTime = item.value("lastOpEndTime", 0);	 // default to 0 if not present
+
+				for(const auto& opItem: item.at("operations")) {
+					Operation op;
+					op.type = opItem.at("type").get<int>();
+					op.eligibleMachines = opItem.at("eligibleMachines").get<std::vector<int>>();
+					job.operations.push_back(op);
+				}
+
+				jobs.push_back(job);
+			}
+
+			processingTimes = j.at("processingTimes").get<std::vector<std::vector<int>>>();
+		} catch(const json::exception& e) {
+			throw std::runtime_error("JSON processing error: " + std::string(e.what()));
+		}
 
 		if(!Validate()) {
 			throw std::runtime_error("Loaded data failed validation");
@@ -128,51 +157,48 @@ inline JobShopData GenerateData() {
 	// 1. Generate processing times only for eligible machines
 	data.processingTimes.resize(data.numOpTypes);
 
-	data.processingTimes.resize(data.numOpTypes);
 	for(int o = 0; o < data.numOpTypes; ++o) {
 		// Create shuffled machine list for this operation type
 		std::vector<int> machines(data.numMachines);
-		std::iota(machines.begin(), machines.end(), 0);
+		std::iota(machines.begin(), machines.end(), 0);	 // fill vector with 0, 1, ..., numMachines-1
 		std::random_shuffle(machines.begin(), machines.end());
 
 		// Select 1-3 eligible machines with random times
-		int numEligible = data.opFlexibilityRange.first + rand() % flexibilityRangeRemainder;
+		const int numEligibleMachines = data.opFlexibilityRange.first + rand() % flexibilityRangeRemainder;
 
 		data.processingTimes[o].resize(data.numMachines, 0);  // Initialize all to 0 (ineligible)
 
-		for(int m = 0; m < numEligible; ++m) {
-			data.processingTimes[o][m] = data.opDurationRange.first + rand() % durationRangeRemainder;
+		for(int m = 0; m < numEligibleMachines; ++m) {
+			// random processing time for random eligible machine
+			data.processingTimes[o][machines[m]] = data.opDurationRange.first + rand() % durationRangeRemainder;
 		}
 	}
 
-	// Inicjalizacja jobów
+	// 2. Generate jobs with unique operation types
 	for(int j = 0; j < data.numJobs; ++j) {
 		Job job;
 		job.id = j;
 
 		// Create shuffled operation types
-        std::vector<int> opTypes(data.numOpTypes);
-        std::iota(opTypes.begin(), opTypes.end(), 0);
-        std::random_shuffle(opTypes.begin(), opTypes.end());
+		std::vector<int> opTypes(data.numOpTypes);
+		std::iota(opTypes.begin(), opTypes.end(), 0);
+		std::random_shuffle(opTypes.begin(), opTypes.end());
 
-		
-		for(int o = 0; o < data.opCountPerJobRange.first + rand() % operationRangeRemainder; ++o) {
-			Operation op;
-			op.type = (rand() % data.numOpTypes);  // Random operation type
-			int numEligibleMachines = data.opFlexibilityRange.first + rand() % flexibilityRangeRemainder;
+		// Select 5-10 unique operations
+		const int numOperations = data.opCountPerJobRange.first + rand() % operationRangeRemainder;
 
-			for(int m = 0; m < numEligibleMachines; ++m) {
-				std::unordered_set<int> selectedMachines;  // Track selected machines
-				int machineId;
-				do {
-					machineId = rand() % data.numMachines;	// Randomly select a machine
-				} while(selectedMachines.find(machineId) != selectedMachines.end());  // Ensure it's not already selected
+		for(int o = 0; o < numOperations; ++o) {
+			Operation operation;
+			operation.type = opTypes[o];  // Random operation type
 
-				selectedMachines.insert(machineId);		   // Mark this machine as selected
-				op.eligibleMachines.push_back(machineId);  // Assign the machine
+			// get eligible machines for this operation type (non zero in processingTimes)
+			for(int m = 0; m < data.numMachines; ++m) {
+				if(data.processingTimes[operation.type][m] > 0) {
+					operation.eligibleMachines.push_back(m);
+				}
 			}
 
-			job.operations.push_back(op);
+			job.operations.push_back(operation);
 		}
 		data.jobs.push_back(job);
 

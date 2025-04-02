@@ -9,19 +9,19 @@ int main() {
 	srand(time(0));
 
 	bool generateRandomJobs = false;
-	bool generateRandomNNSetup = false;
+	bool generateRandomNNSetup = true;
 
 	try {
 		JobShopData data;
 
-		if(generateRandomJobs) {  // TODO: fix data generation (don't generate in build)
+		if(generateRandomJobs) {
 			data = GenerateData();
 			data.SaveToJson("jobshop_data");
 		} else {
 			data.LoadFromJson("jobshop_data");
 		}
 
-		std::vector<int> topology = {2, 32, 16, 1};	 // Przykładowa topologia sieci
+		std::vector<int> topology = {3, 32, 16, 1};	 // TODO: implement dynamic NN input size
 
 		// NeuralNetwork nn(topology, &weights, &biases);
 

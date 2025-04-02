@@ -23,13 +23,13 @@ public:
 
 	struct Solution {
 		struct OperationSchedule {
-			int jobId;       // Job this operation belongs to
-			int opId;        // Operation ID
-			int startTime;   // Time when the operation starts
-			int endTime;     // Time when the operation finishes
+			int jobId;		// Job this operation belongs to
+			int opId;		// Operation ID
+			int startTime;	// Time when the operation starts
+			int endTime;	// Time when the operation finishes
 		};
 
-		std::vector<std::vector<OperationSchedule>> schedule;	 // Every machine's schedule
+		std::vector<std::vector<OperationSchedule>> schedule;  // Every machine's schedule
 		int makespan = 0;
 	};
 
@@ -44,7 +44,13 @@ private:
 
 	static NeuralNetwork InitializeNetworkFromFile(const std::string& filename);
 
-	std::vector<float> ExtractFeatures(const JobShopData& data, int jobId, int operationId, int machineId, int waitTime);
+	std::vector<float> ExtractFeatures(const JobShopData& data,
+									   const Job& job,
+									   const int& operationType,
+									   const int& machineId,
+									   const int& startTime,
+									   const int& machineAvailableTime) const;
+
 	void UpdateSchedule(JobShopData& data, int jobId, int operationId, int machineId, Solution& solution);
 };
 
