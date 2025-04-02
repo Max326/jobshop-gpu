@@ -89,11 +89,12 @@ JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
 				// TODO: rule 1: check machine availability and save that to "envelope"
 				// TODO: rule 2: check for 'holes' in the schedule
 
+				//TODO: implement dynamic NN input size, not from topology
 				std::vector<float> features = ExtractFeatures(modifiedData, job, opType, machineId, startTime, machineAvailableTime);
 
 				// std::cout << "Features: " << features[0] << ", " << features[1] << ", " << features[2] << std::endl;
 
-				features.resize(3);
+				// features.resize(4);
 
 				std::vector<float> output = neuralNetwork.Forward(features);
 
@@ -129,9 +130,13 @@ std::vector<float> JobShopHeuristic::ExtractFeatures(const JobShopData& data,
 
 	int waitTime = startTime - machineAvailableTime;
 
+	int envelope = job.lastOpEndTime - machineAvailableTime;
+
 	features.push_back(static_cast<float>(data.processingTimes[operationType][machineId]));
 
 	features.push_back(static_cast<float>(waitTime));
+
+	features.push_back(static_cast<float>(envelope)); //TODO: vector?
 
 	features.push_back(static_cast<float>(data.jobs[job.id].operations.size()));
 

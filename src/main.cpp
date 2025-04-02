@@ -8,10 +8,10 @@
 int main() {
 	srand(time(0));
 
-	const bool generateRandomJobs = true;
-	const bool generateRandomNNSetup = true;
+	const bool generateRandomJobs = false;
+	const bool generateRandomNNSetup = false;
 
-	const std::vector<int> topology = {3, 32, 16, 1};  // TODO: implement dynamic NN input size
+	const std::vector<int> topology = {4, 32, 16, 1};  // TODO: implement dynamic NN input size
 
 	try {
 		JobShopData data;

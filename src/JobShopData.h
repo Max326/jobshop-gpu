@@ -158,6 +158,8 @@ inline JobShopData GenerateData() {
 	data.processingTimes.resize(data.numOpTypes);
 
 	for(int o = 0; o < data.numOpTypes; ++o) {
+		data.processingTimes[o].resize(data.numMachines, 0);
+
 		// Create shuffled machine list for this operation type
 		std::vector<int> machines(data.numMachines);
 		std::iota(machines.begin(), machines.end(), 0);	 // fill vector with 0, 1, ..., numMachines-1
@@ -204,8 +206,6 @@ inline JobShopData GenerateData() {
 		data.jobs.push_back(job);
 
 		// TODO: fix eligible machines for each operation
-		// TODO: add rules to solve function
-		// TODO: fix data loading
 	}
 
 	return data;
