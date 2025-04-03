@@ -20,17 +20,20 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(json)
 
 # Dodaj pliki źródłowe CUDA
-set(CUDA_SOURCES
-    src/NeuralNetwork.cu
+file(GLOB_RECURSE CUDA_SOURCES
+    src/*.cu
 )
 
 # Dodaj pliki źródłowe C++
-set(CPP_SOURCES
-    src/JobShopData.h
-    src/JobShopHeuristic.cpp
-    src/JobShopHeuristic.h
-    src/main.cpp
+file(GLOB_RECURSE CPP_SOURCES
+    src/*.cpp
+    src/*.h
+    src/*.hpp
 )
+
+# Optionally, you can print the found files for debugging
+message(STATUS "Found CUDA sources: ${CUDA_SOURCES}")
+message(STATUS "Found C++ sources: ${CPP_SOURCES}")
 
 # Dodaj pliki źródłowe do projektu
 add_executable(JobShopScheduler ${CPP_SOURCES} ${CUDA_SOURCES})

@@ -3,7 +3,7 @@
 #include <iostream>
 
 #include "JobShopData.h"
-#include "JobShopHeuristic.h"
+#include "JobShopHeuristic.cuh"
 
 int main() {
 	srand(time(0));

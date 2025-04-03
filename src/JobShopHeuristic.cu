@@ -1,4 +1,4 @@
-#include "JobShopHeuristic.h"
+#include <cuda_runtime.h>
 
 #include <algorithm>
 #include <cfloat>
@@ -6,6 +6,8 @@
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
+
+#include "JobShopHeuristic.cuh"
 
 using json = nlohmann::json;
 
@@ -89,7 +91,7 @@ JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
 				// TODO: rule 1: check machine availability and save that to "envelope"
 				// TODO: rule 2: check for 'holes' in the schedule
 
-				//TODO: implement dynamic NN input size, not from topology
+				// TODO: implement dynamic NN input size, not from topology
 				std::vector<float> features = ExtractFeatures(modifiedData, job, opType, machineId, startTime, machineAvailableTime);
 
 				// std::cout << "Features: " << features[0] << ", " << features[1] << ", " << features[2] << std::endl;
@@ -136,7 +138,7 @@ std::vector<float> JobShopHeuristic::ExtractFeatures(const JobShopData& data,
 
 	features.push_back(static_cast<float>(waitTime));
 
-	features.push_back(static_cast<float>(envelope)); //TODO: vector?
+	features.push_back(static_cast<float>(envelope));  // TODO: vector?
 
 	features.push_back(static_cast<float>(data.jobs[job.id].operations.size()));
 
