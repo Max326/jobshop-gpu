@@ -48,7 +48,36 @@ NeuralNetwork JobShopHeuristic::InitializeNetworkFromFile(const std::string& fil
 	}
 }
 
-JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
+__device__ float ScoreOperationGPU(
+	const float* weights,
+	const JobShopData& data,
+	const Job& job,
+	int opIdx,
+	int machineId) {
+	// Simplified feature extraction (adapt from your CPU version)
+	float features[4] = {
+		data.processingTimes[job.operations[opIdx].type][machineId],
+		// startTime - machineAvailableTime;
+
+		// int envelope = job.lastOpEndTime - machineAvailableTime;
+
+		// features.push_back(static_cast<float>(waitTime));
+
+		// features.push_back(static_cast<float>(envelope));  // TODO: vector?
+
+		// features.push_back(static_cast<float>(data.jobs[job.id].operations.size()));
+	};
+
+	// Call your existing NeuralNetwork::Forward (ensure it's __device__)
+	return ForwardGPU(weights, features);
+}
+
+__global__ void SolveProblemsGPU(const JobShopData& data) {
+	int problem_id = blockIdx.x;
+	int weight_id = blockIdx.y;
+
+	JobShopData problem = problems[problem_id];
+
 	Solution solution;
 	solution.makespan = 0;
 	solution.schedule.resize(data.numMachines);

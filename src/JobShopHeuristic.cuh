@@ -43,7 +43,7 @@ public:
 		// std::vector<std::vector<OperationSchedule>> schedule;  // Every machine's schedule
 	};
 
-	Solution Solve(const JobShopData& data);
+	// Solution Solve(const JobShopData& data);
 
 	NeuralNetwork neuralNetwork;
 
