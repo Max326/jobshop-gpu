@@ -2,7 +2,6 @@
 #define JOB_SHOP_HEURISTIC_H
 
 #pragma once
-#include <cuda_runtime.h>
 
 #ifdef __CUDACC__
 #	define GPU_CALLABLE __host__ __device__
@@ -14,7 +13,7 @@
 #include <vector>
 
 #include "JobShopData.h"
-#include "NeuralNetwork.h"
+#include "NeuralNetwork.cuh"
 
 class JobShopHeuristic
 {

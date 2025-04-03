@@ -5,7 +5,7 @@
 #include <ctime>
 #include <fstream>
 
-#include "NeuralNetwork.h"
+#include "NeuralNetwork.cuh"
 
 struct NeuralNetwork::CudaData {
 	float *d_weights = nullptr;
@@ -170,6 +170,44 @@ __global__ void ForwardPassKernel(const float *input, int inputSize,
 		sum += biases[idx];
 		output[idx] = ScaleTanh2(sum);
 	}
+}
+
+__device__ float NeuralNetwork::ForwardGPU(
+	const float *weights,
+	const float *biases,
+	const int *topology,
+	const float *input,
+	int num_layers) {
+	float activations[maxLayerSize];  // Adjust based on your topology
+
+	// Copy input
+	for(int i = 0; i < topology[0]; i++)
+		activations[i] = input[i];
+
+	// Forward pass through layers
+	int weight_offset = 0;
+	int bias_offset = 0;
+
+	for(int layer = 1; layer < num_layers; layer++) {
+		int in_size = topology[layer - 1];
+		int out_size = topology[layer];
+
+		for(int neuron = 0; neuron < out_size; neuron++) {
+			float sum = biases[bias_offset + neuron];
+
+			for(int input_idx = 0; input_idx < in_size; input_idx++) {
+				sum += activations[input_idx] *
+					   weights[weight_offset + neuron * in_size + input_idx];
+			}
+
+			activations[neuron] = ScaleTanh2(sum);
+		}
+
+		weight_offset += in_size * out_size;
+		bias_offset += out_size;
+	}
+
+	return activations[0];	// Single output
 }
 
 std::vector<float> NeuralNetwork::Forward(const std::vector<float> &input) {

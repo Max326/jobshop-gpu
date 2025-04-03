@@ -2,6 +2,8 @@
 #define NEURAL_NETWORK_H
 
 #pragma once
+#include <cuda_runtime.h>
+
 #include <filesystem>
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -32,6 +34,14 @@ public:
 
 	// void Forward(const std::vector<float>& input, std::vector<float>& output);
 	std::vector<float> Forward(const std::vector<float>& input);
+
+	// GPU-compatible forward pass (weights/biases must be pre-flattened)
+	static __device__ float ForwardGPU(
+		const float* weights,  // Flattened [layer][in][out]
+		const float* biases,   // Flattened [layer][neuron]
+		const int* topology,   // Layer sizes
+		const float* input,	   // Input features
+		int num_layers);
 
 	void SaveToJson(const std::string& filename) const {
 		FileManager::EnsureDataDirExists();
@@ -74,7 +84,9 @@ public:
 	void GenerateBiases();
 
 public:
-	struct CudaData;					 // Forward declaration
+	static const int maxLayerSize = 32;
+
+	struct CudaData;				 // Forward declaration
 	std::unique_ptr<CudaData> cudaData;	 // Enkapsulacja danych CUDA
 
 	std::vector<int> topology;
@@ -99,7 +111,7 @@ private:
 		if(topology.empty()) {
 			throw std::invalid_argument("NeuralNetwork: Topology cannot be empty");
 		}
-		
+
 		std::cout << "=== DATA VALIDATION ===\n";
 		std::cout << "Topology: ";
 		for(auto t: topology)
