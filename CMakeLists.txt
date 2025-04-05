@@ -1,48 +1,49 @@
 cmake_minimum_required(VERSION 3.20)
-project(JobShopScheduler CUDA CXX)
+project(JobShopScheduler LANGUAGES CXX CUDA)
 
+# Ustawienia standardów
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Poprawne flagi dla CUDA 12.x
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --fmad=false --prec-div=true --prec-sqrt=true")
+# Flagi dla CUDA (GTX 1050 Ti = sm_61)
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -arch=sm_61 --expt-relaxed-constexpr")
 
-# Dodaj katalog źródłowy
-include_directories(src)
+# Flagi debugowania
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -G -lineinfo")
+endif()
 
-# Pobierz bibliotekę nlohmann/json (jeśli nie masz jej lokalnie)
+# Biblioteka JSON
 include(FetchContent)
 FetchContent_Declare(
     json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v3.11.2  # Możesz wybrać nowszą wersję
+    GIT_TAG v3.11.2
 )
 FetchContent_MakeAvailable(json)
 
-# Dodaj pliki źródłowe CUDA
-file(GLOB_RECURSE CUDA_SOURCES
-    src/*.cu
+# Źródła (używaj jawnej listy zamiast GLOB dla lepszej kontroli)
+set(SOURCES
+    src/main.cpp
+    src/NeuralNetwork.cu
+    src/JobShopHeuristic.cu
 )
 
-# Dodaj pliki źródłowe C++
-file(GLOB_RECURSE CPP_SOURCES
-    src/*.cpp
-    src/*.h
-    src/*.hpp
+# Pliki nagłówkowe
+set(HEADERS
+    src/NeuralNetwork.h
+    src/JobShopHeuristic.cuh
+    src/JobShopData.h
+    src/FileManager.h
 )
 
-# Optionally, you can print the found files for debugging
-message(STATUS "Found CUDA sources: ${CUDA_SOURCES}")
-message(STATUS "Found C++ sources: ${CPP_SOURCES}")
+# Plik wykonywalny
+add_executable(JobShopScheduler ${SOURCES} ${HEADERS})
 
-# Dodaj pliki źródłowe do projektu
-add_executable(JobShopScheduler ${CPP_SOURCES} ${CUDA_SOURCES})
-
-# Ustawienia dla CUDA
-set_property(TARGET JobShopScheduler PROPERTY CUDA_SEPARABLE_COMPILATION ON)
-set_property(TARGET JobShopScheduler PROPERTY CUDA_ARCHITECTURES 75)
-
-# Linkowanie bibliotek
+# Linkowanie
 target_link_libraries(JobShopScheduler PRIVATE nlohmann_json::nlohmann_json)
 
+# Kopiowanie danych
 file(COPY ${CMAKE_SOURCE_DIR}/data DESTINATION ${CMAKE_BINARY_DIR})
