@@ -1,5 +1,3 @@
-#include <cuda_runtime.h>
-
 #include <algorithm>
 #include <cfloat>
 #include <filesystem>
@@ -48,142 +46,72 @@ NeuralNetwork JobShopHeuristic::InitializeNetworkFromFile(const std::string& fil
 	}
 }
 
-__device__ float ScoreOperationGPU(
-	const float* weights,
-	const JobShopData& data,
-	const Job& job,
-	int opIdx,
-	int machineId) {
-	// Simplified feature extraction (adapt from your CPU version)
-	float features[4] = {
-		data.processingTimes[job.operations[opIdx].type][machineId],
-		// startTime - machineAvailableTime;
+void JobShopHeuristic::SolveBatch(
+	const GPUProblem* d_problems,
+	GPUSolution* d_solutions,
+	int num_problems) {
+	NeuralNetwork::DeviceEvaluator eval = neuralNetwork.GetDeviceEvaluator();
 
-		// int envelope = job.lastOpEndTime - machineAvailableTime;
+	// Launch one thread per problem
+	int threads = 256;
+	int blocks = (num_problems + threads - 1) / threads;
 
-		// features.push_back(static_cast<float>(waitTime));
+	SolveFJSSPKernel<<<blocks, threads>>>(
+		d_problems, eval, d_solutions, num_problems);
 
-		// features.push_back(static_cast<float>(envelope));  // TODO: vector?
-
-		// features.push_back(static_cast<float>(data.jobs[job.id].operations.size()));
-	};
-
-	// Call your existing NeuralNetwork::Forward (ensure it's __device__)
-	return NeuralNetwork::ForwardGPU(weights, features);
+	cudaDeviceSynchronize();
 }
 
-__global__ void JobShopHeuristic::SolveProblemsGPU(const JobShopData* problems,
-												   const float* weights,
-												   const float* biases,
-												   const int* topology,
-												   int num_layers,
-												   GPUSolution* solutions) {
-	int problemId = blockIdx.x;
-	int weightId = blockIdx.y;
+void JobShopHeuristic::CPUSolution::FromGPU(const SolutionManager::GPUSolution& gpuSol) {
+	makespan = gpuSol.makespan;
+	schedule.resize(gpuSol.numMachines);
 
-	JobShopData problem = problems[problemId];
+	std::vector<OperationSchedule> temp_ops(gpuSol.numMachines * MAX_OPS);
+	std::vector<int> counts(gpuSol.numMachines);
 
-	JobShopHeuristic::GPUSolution solution;
-	solution.makespan = 0;
-	solution.schedule.resize(data.numMachines);
+	cudaMemcpy(temp_ops.data(), gpuSol.schedule,
+			   sizeof(OperationSchedule) * temp_ops.size(),
+			   cudaMemcpyDeviceToHost);
+	cudaMemcpy(counts.data(), gpuSol.scheduleCounts,
+			   sizeof(int) * gpuSol.numMachines,
+			   cudaMemcpyDeviceToHost);
 
-	// solution.machineEndTimes.resize(data.numMachines, 0);
+	for(int m = 0; m < gpuSol.numMachines; ++m) {
+		schedule[m].assign(
+			temp_ops.begin() + m * MAX_OPS,
+			temp_ops.begin() + m * MAX_OPS + counts[m]);
+	}
+}
 
-	JobShopData modifiedData = data;
+SolutionManager::GPUSolution JobShopHeuristic::CPUSolution::ToGPU() const {
+	SolutionManager::GPUSolution gpuSol;
+	gpuSol.numMachines = schedule.size();
+	gpuSol.makespan = makespan;
 
-	while(true) {
-		// Znajdź dostępne operacje
-		float bestScore = -FLT_MAX;
-		int bestJobId = -1, bestOperationIdx = -1, bestMachineId = -1;
+	// Allocate device memory
+	cudaMalloc(&gpuSol.schedule, sizeof(OperationSchedule) * schedule.size() * MAX_OPS);
+	cudaMalloc(&gpuSol.scheduleCounts, sizeof(int) * schedule.size());
 
-		int bestStartTime = 0;
-		int bestProcessingTime = 0;
-
-		for(int jobId = 0; jobId < modifiedData.numJobs; ++jobId) {
-			auto& job = modifiedData.jobs[jobId];
-
-			// Skip if no operations left or next operation isn't ready
-			if(job.nextOpIndex >= job.operations.size()) continue;
-
-			const auto& operation = job.operations[job.nextOpIndex];
-			const int opType = operation.type;
-
-			for(int machineId: operation.eligibleMachines) {
-				if(modifiedData.processingTimes[opType][machineId] == 0) continue;
-
-				// Get the time at which the machine will become available
-				const int machineAvailableTime = solution.schedule[machineId].empty()
-													 ? 0
-													 : solution.schedule[machineId].back().endTime;
-
-				const int startTime = std::max(machineAvailableTime, job.lastOpEndTime);
-
-				// const int envelope = job.lastOpEndTime - machineAvailableTime;
-
-				const int processingTime = data.processingTimes[opType][machineId];
-
-				// TODO: rule 1: check machine availability and save that to "envelope"
-				// TODO: rule 2: check for 'holes' in the schedule
-
-				// TODO: implement dynamic NN input size, not from topology
-				std::vector<float> features = ExtractFeaturesGPU(modifiedData, job, opType, machineId, startTime, machineAvailableTime);
-
-				// std::cout << "Features: " << features[0] << ", " << features[1] << ", " << features[2] << std::endl;
-
-				// features.resize(4);
-
-				std::vector<float> output = neuralNetwork.Forward(features);
-
-				float score = output[0];
-
-				if(score > bestScore) {
-					bestScore = score;
-					bestJobId = jobId;
-					bestOperationIdx = job.nextOpIndex;
-					bestMachineId = machineId;
-					bestStartTime = startTime;
-					bestProcessingTime = processingTime;
-				}
-			}
-		}
-
-		if(bestJobId == -1) break;	// Wszystkie operacje zaplanowane
-
-		// Zaplanuj operację na maszynie
-		UpdateSchedule(modifiedData, bestJobId, bestOperationIdx, bestMachineId, solution);
+	// Flatten and copy schedule
+	std::vector<OperationSchedule> flat_schedule;
+	std::vector<int> counts;
+	for(const auto& machine: schedule) {
+		flat_schedule.insert(flat_schedule.end(), machine.begin(), machine.end());
+		counts.push_back(machine.size());
 	}
 
-	return solution;
+	cudaMemcpy(gpuSol.schedule, flat_schedule.data(),
+			   sizeof(OperationSchedule) * flat_schedule.size(),
+			   cudaMemcpyHostToDevice);
+	cudaMemcpy(gpuSol.scheduleCounts, counts.data(),
+			   sizeof(int) * counts.size(),
+			   cudaMemcpyHostToDevice);
+
+	return gpuSol;
 }
 
-JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
-#ifdef USE_GPU
-	// --- GPU Setup ---
-	// 1. Upload data to GPU
-	JobShopData* d_problem;
-	cudaMalloc(&d_problem, sizeof(JobShopData));
-	cudaMemcpy(d_problem, &data, sizeof(JobShopData), cudaMemcpyHostToDevice);
-
-	// 2. Prepare GPU solution
-	GPUSolution* d_solution;
-	cudaMalloc(&d_solution, sizeof(GPUSolution));
-
-	// 3. Launch kernel
-	SolveProblemsGPU<<<1, 1>>>(d_problem,
-							   neuralNetwork.flattened_weights(),
-							   neuralNetwork.flattened_biases(),
-							   neuralNetwork.topology(),
-							   neuralNetwork.num_layers(),
-							   d_solution);
-
-	// 4. Copy back and convert to CPU format
-	GPUSolution gpu_sol;
-	cudaMemcpy(&gpu_sol, d_solution, sizeof(GPUSolution), cudaMemcpyDeviceToHost);
-	return ConvertToCPUSolution(gpu_sol);
-#else
-	// Original CPU code
-
-	Solution solution;
+JobShopHeuristic::CPUSolution JobShopHeuristic::Solve(const JobShopData& data) {  //! obsolete
+	CPUSolution solution;
 	solution.makespan = 0;
 	solution.schedule.resize(data.numMachines);
 
@@ -254,25 +182,6 @@ JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
 	}
 
 	return solution;
-#endif
-}
-
-__device__ void ExtractFeaturesGPU(
-	const JobShopData& data,
-	const Job& job,
-	int opType,
-	int machineId,
-	int* machineAvailableTimes,	 // [num_machines]
-	float* featuresOut			 // Output array
-) {
-	int machine_time = machineAvailableTimes[machineId];
-	int job_time = job.lastOpEndTime;
-	int start_time = max(machine_time, job_time);
-
-	featuresOut[0] = data.processingTimes[opType][machineId];
-	featuresOut[1] = start_time - machine_time;	 // Wait time
-	featuresOut[2] = job_time - machine_time;	 // Envelope
-	featuresOut[3] = job.operations.size();
 }
 
 std::vector<float> JobShopHeuristic::ExtractFeatures(const JobShopData& data,
@@ -299,7 +208,7 @@ std::vector<float> JobShopHeuristic::ExtractFeatures(const JobShopData& data,
 }
 
 void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operationIdx,
-									  int machineId, Solution& solution) {
+									  int machineId, CPUSolution& solution) {
 	auto& job = data.jobs[jobId];
 	const auto& operation = job.operations[operationIdx];
 
@@ -334,7 +243,7 @@ void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operatio
 	// data.jobs[jobId].operations.pop_back();	 // Remove the scheduled operation
 }
 
-void JobShopHeuristic::PrintSchedule(const Solution& solution, const JobShopData& data) {
+void JobShopHeuristic::PrintSchedule(const CPUSolution& solution, const JobShopData& data) {
 	std::cout << "\n=== FINAL SCHEDULE ===" << std::endl;
 
 	for(int machineId = 0; machineId < solution.schedule.size(); ++machineId) {
@@ -370,4 +279,73 @@ void JobShopHeuristic::PrintSchedule(const Solution& solution, const JobShopData
 
 	std::cout << "Makespan: " << solution.makespan << "\n"
 			  << std::endl;
+}
+
+__global__ void SolveFJSSPKernel(
+	const GPUProblem* problems,
+	const NeuralNetwork::DeviceEvaluator nn_eval,
+	SolutionManager::GPUSolution* solutions,
+	int total_problems) {
+	int problem_id = blockIdx.x * blockDim.x + threadIdx.x;
+	if(problem_id >= total_problems) return;
+
+	GPUProblem problem = problems[problem_id];
+	SolutionManager::GPUSolution solution = solutions[problem_id];
+
+	// Initialize state in registers
+	int machine_times[MAX_MACHINES] = {0};
+	int job_next[MAX_JOBS] = {0};
+	int job_last[MAX_JOBS] = {0};
+
+	// Main solving loop
+	while(true) {
+		float best_score = -FLT_MAX;
+		int best_job = -1, best_op = -1, best_machine = -1;
+
+		// Evaluate all candidate operations
+		for(int job = 0; job < problem.numJobs; job++) {
+			if(job_next[job] >= problem.jobs[job].operationCount) continue;
+
+			GPUOperation op = problem.jobs[job].operations[job_next[job]];
+			for(int m = 0; m < op.eligibleCount; m++) {
+				int machine = op.eligibleMachines[m];
+				int start_time = std::max(machine_times[machine], job_last[job]);
+
+				// Feature extraction
+				float features[4] = {
+					problem.processingTimes[op.type * problem.numMachines + machine],
+					start_time - machine_times[machine],
+					job_last[job] - machine_times[machine],
+					problem.jobs[job].operationCount};
+
+				// Neural net evaluation (in this thread)
+				float score = nn_eval.Evaluate(features);
+
+				if(score > best_score) {
+					best_score = score;
+					best_job = job;
+					best_op = job_next[job];
+					best_machine = machine;
+				}
+			}
+		}
+
+		if(best_job == -1) break;  // No more operations
+
+		// Update schedule
+		int processing_time = problem.processingTimes[problem.jobs[best_job].operations[best_op].type * problem.numMachines + best_machine];
+		int end_time = max(machine_times[best_machine], job_last[best_job]) + processing_time;
+
+		int op_index = atomicAdd(&solution.scheduleCounts[best_machine], 1);
+		solution.schedule[best_machine * MAX_OPS + op_index] = {
+			best_job,
+			problem.jobs[best_job].operations[best_op].type,
+			end_time - processing_time,
+			end_time};
+
+		// Update state
+		machine_times[best_machine] = end_time;
+		job_last[best_job] = end_time;
+		job_next[best_job]++;
+	}
 }

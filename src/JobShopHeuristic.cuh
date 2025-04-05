@@ -1,19 +1,65 @@
-#ifndef JOB_SHOP_HEURISTIC_H
-#define JOB_SHOP_HEURISTIC_H
+#ifndef JOB_SHOP_HEURISTIC_CUH
+#define JOB_SHOP_HEURISTIC_CUH
 
 #pragma once
 
 #ifdef __CUDACC__
 #	define GPU_CALLABLE __host__ __device__
+#	include <cuda_runtime.h>
 #else
 #	define GPU_CALLABLE
 #endif
 
+#include <cfloat>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "JobShopData.h"
+#include "JobShopData.cuh"
 #include "NeuralNetwork.cuh"
+
+#define MAX_MACHINES 30
+#define MAX_JOBS	 30
+#define MAX_OPS		 1000
+
+struct OperationSchedule {
+	int jobId;
+	int opId;
+	int startTime;
+	int endTime;
+};
+
+class SolutionManager
+{
+public:
+	struct GPUSolution {
+		OperationSchedule* schedule;  // [machine][operation]
+		int* scheduleCounts;		  // Operations per machine
+		int makespan;
+		int numMachines;
+	};
+
+	static GPUSolution CreateGPUSolution(int numMachines, int maxOpsPerMachine);
+	static void FreeGPUSolution(GPUSolution& solution);
+};
+
+struct GPUSolverState {
+	// Problem state
+	int* machine_available_times;
+	int* job_next_op;
+	int* job_last_end;
+
+	// Solution tracking
+	OperationSchedule* schedule;
+	int* schedule_counts;
+	int makespan;
+};
+
+__global__ void SolveFJSSPKernel(
+	const GPUProblem* problems,
+	const NeuralNetwork::DeviceEvaluator nn_eval,
+	SolutionManager::GPUSolution* solutions,
+	int total_problems);
 
 class JobShopHeuristic
 {
@@ -27,41 +73,29 @@ public:
 
 	JobShopHeuristic(NeuralNetwork&& net) : neuralNetwork(std::move(net)) {}
 
-	struct Solution {
-		struct OperationSchedule {
-			int jobId;		// Job this operation belongs to
-			int opId;		// Operation ID
-			int startTime;	// Time when the operation starts
-			int endTime;	// Time when the operation finishes
-		};
-
-		OperationSchedule* operationSchedule;  // Flat array: [machine][operation] instead of vector<vector<OperationSchedule>>
-		int* scheduleCounts;
+	struct CPUSolution {
+		std::vector<std::vector<OperationSchedule>> schedule;
 		int makespan = 0;
 
-		// std::vector<std::vector<OperationSchedule>> schedule;  // Every machine's schedule
+		void FromGPU(const SolutionManager::GPUSolution& gpuSol);
+		SolutionManager::GPUSolution ToGPU() const;
 	};
 
-	struct GPUSolution {
-		struct OperationSchedule {
-			int jobId;		// Job this operation belongs to
-			int opId;		// Operation ID
-			int startTime;	// Time when the operation starts
-			int endTime;	// Time when the operation finishes
-		};
+	CPUSolution Solve(const JobShopData& data);
 
-		OperationSchedule* operationSchedule;  // Flat array: [machine][operation] instead of vector<vector<OperationSchedule>>
-		int* scheduleCounts;
-		int makespan = 0;
-
-		// std::vector<std::vector<OperationSchedule>> schedule;  // Every machine's schedule
+	// GPU Interface
+	struct SolverConfig {
+		int maxThreadsPerBlock = 256;
+		int maxOperationsPerMachine = 100;
 	};
 
-	Solution Solve(const JobShopData& data);
+	void SolveGPU(const GPUProblem& problem,
+				  SolutionManager::GPUSolution& solution,
+				  const SolverConfig& config = {});
 
 	NeuralNetwork neuralNetwork;
 
-	void PrintSchedule(const Solution& solution, const JobShopData& data);
+	void PrintSchedule(const CPUSolution& solution, const JobShopData& data);
 
 	// Add GPU kernel declaration
 #ifdef __CUDACC__
@@ -95,7 +129,7 @@ private:
 									   const int& startTime,
 									   const int& machineAvailableTime) const;
 
-	void UpdateSchedule(JobShopData& data, int jobId, int operationId, int machineId, Solution& solution);
+	void UpdateSchedule(JobShopData& data, int jobId, int operationId, int machineId, CPUSolution& solution);
 };
 
-#endif	// JOB_SHOP_HEURISTIC_H
+#endif	// JOB_SHOP_HEURISTIC_CUH

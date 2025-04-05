@@ -16,6 +16,8 @@ struct NeuralNetwork::CudaData {
 
 void NeuralNetwork::InitializeCudaData() {
 	// 1. Calculate offsets for each layer's weights and biases
+	FlattenParams();
+
 	layerOffsets.resize(weights.size());
 	biasOffsets.resize(biases.size());
 	size_t total_weights = 0;
@@ -149,42 +151,14 @@ __device__ float ScaleTanh2(float x) {
 	}
 }
 
-// Example optimized kernel using shared memory
-__global__ void ForwardPassKernel(const float *input, int inputSize,
-								  const float *weights, const float *biases,
-								  float *output, int outputSize) {
-	extern __shared__ float shared_input[];
-	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-
-	// Load input into shared memory (coalesced access)
-	if(threadIdx.x < inputSize) {
-		shared_input[threadIdx.x] = input[threadIdx.x];
-	}
-	__syncthreads();
-
-	if(idx < outputSize) {
-		float sum = 0.0f;
-		for(int i = 0; i < inputSize; ++i) {
-			sum += shared_input[i] * weights[idx * inputSize + i];
-		}
-		sum += biases[idx];
-		output[idx] = ScaleTanh2(sum);
-	}
-}
-
-__device__ float NeuralNetwork::ForwardGPU(
-	const float *weights,
-	const float *biases,
-	const int *topology,
-	const float *input,
-	int num_layers) {
-	float activations[maxLayerSize];  // Adjust based on your topology
+__device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features) const {
+	extern __shared__ float activations[maxLayerSize];
 
 	// Copy input
 	for(int i = 0; i < topology[0]; i++)
-		activations[i] = input[i];
+		activations[i] = features[i];
 
-	// Forward pass through layers
+	// Forward pass
 	int weight_offset = 0;
 	int bias_offset = 0;
 
@@ -194,12 +168,9 @@ __device__ float NeuralNetwork::ForwardGPU(
 
 		for(int neuron = 0; neuron < out_size; neuron++) {
 			float sum = biases[bias_offset + neuron];
-
-			for(int input_idx = 0; input_idx < in_size; input_idx++) {
-				sum += activations[input_idx] *
-					   weights[weight_offset + neuron * in_size + input_idx];
+			for(int i = 0; i < in_size; i++) {
+				sum += activations[i] * weights[weight_offset + neuron * in_size + i];
 			}
-
 			activations[neuron] = ScaleTanh2(sum);
 		}
 
@@ -208,52 +179,6 @@ __device__ float NeuralNetwork::ForwardGPU(
 	}
 
 	return activations[0];	// Single output
-}
-
-std::vector<float> NeuralNetwork::Forward(const std::vector<float> &input) {
-	// Copy input to device
-	CUDA_CHECK(cudaMemcpy(cudaData->d_input, input.data(),
-						  input.size() * sizeof(float),
-						  cudaMemcpyHostToDevice));
-
-	float *current_input = cudaData->d_input;
-	float *current_output = cudaData->d_output;
-
-	for(size_t l = 0; l < weights.size(); ++l) {
-		int in_size = topology[l];
-		int out_size = topology[l + 1];
-
-		// Get the weight and bias offsets for this layer
-		size_t weight_offset = layerOffsets[l];
-		size_t bias_offset = biasOffsets[l];
-
-		// Launch the kernel
-		int threadsPerBlock = 256;
-		int blocksPerGrid = (out_size + threadsPerBlock - 1) / threadsPerBlock;
-
-		size_t sharedMemSize = in_size * sizeof(float);	 // in_size = current input layer size
-
-		ForwardPassKernel<<<blocksPerGrid, threadsPerBlock, sharedMemSize>>>(
-			current_input, in_size,
-			cudaData->d_weights + weight_offset,
-			cudaData->d_biases + bias_offset,
-			current_output, out_size);
-		CUDA_CHECK(cudaGetLastError());
-		CUDA_CHECK(cudaDeviceSynchronize());
-
-		// Swap input and output buffers if not the last layer
-		if(l != weights.size() - 1) {
-			std::swap(current_input, current_output);
-		}
-	}
-
-	// Copy the final output from device to host
-	std::vector<float> output(topology.back());
-	CUDA_CHECK(cudaMemcpy(output.data(), current_output,
-						  topology.back() * sizeof(float),
-						  cudaMemcpyDeviceToHost));
-
-	return output;
 }
 
 void NeuralNetwork::GenerateWeights() {
@@ -281,12 +206,16 @@ void NeuralNetwork::GenerateBiases() {
 }
 
 void NeuralNetwork::FlattenParams() {
-	for(const auto& layer: weights) {
+	flattenedWeights.clear();
+	flattenedBiases.clear();
+
+	for(const auto &layer: weights) {
 		flattenedWeights.insert(flattenedWeights.end(),
-								  layer.begin(), layer.end());
+								layer.begin(), layer.end());
 	}
-	for(const auto& layer: biases) {
+
+	for(const auto &layer: biases) {
 		flattenedBiases.insert(flattenedBiases.end(),
-								 layer.begin(), layer.end());
+							   layer.begin(), layer.end());
 	}
 }

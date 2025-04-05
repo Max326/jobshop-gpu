@@ -1,8 +1,20 @@
-#ifndef NEURAL_NETWORK_H
-#define NEURAL_NETWORK_H
+#ifndef NEURAL_NETWORK_CUH
+#define NEURAL_NETWORK_CUH
 
 #pragma once
-#include <cuda_runtime.h>
+
+// i don't know why this is needed, but it is (is it????)
+#ifndef __host__
+#define __host__
+#endif
+
+#ifndef __device__
+#define __device__
+#endif
+
+#ifndef __global__
+#define __global__
+#endif
 
 #include <filesystem>
 #include <iostream>
@@ -31,13 +43,13 @@ public:
 
 	std::vector<float> Forward(const std::vector<float>& input);
 
-	// GPU-compatible forward pass (weights/biases must be pre-flattened)
-	static __device__ float ForwardGPU(
-		const float* weights,  // Flattened [layer][in][out]
-		const float* biases,   // Flattened [layer][neuron]
-		const int* topology,   // Layer sizes
-		const float* input,	   // Input features
-		int numLayers);
+	// // GPU-compatible forward pass (weights/biases must be pre-flattened)
+	// static __device__ float ForwardGPU(
+	// 	const float* weights,  // Flattened [layer][in][out]
+	// 	const float* biases,   // Flattened [layer][neuron]
+	// 	const int* topology,   // Layer sizes
+	// 	const float* input,	   // Input features
+	// 	int numLayers);
 
 	void SaveToJson(const std::string& filename) const {
 		FileManager::EnsureDataDirExists();
@@ -80,6 +92,24 @@ public:
 	void GenerateBiases();
 
 	void FlattenParams();
+
+	struct DeviceEvaluator {
+		const float* weights;  // Flattened weights
+		const float* biases;
+		const int* topology;
+		int num_layers;
+
+		__device__ float Evaluate(const float* features) const;
+	};
+
+	// Prepares evaluator for GPU
+	__host__ DeviceEvaluator GetDeviceEvaluator() const {
+		return {
+			flattenedWeights.data(),
+			flattenedBiases.data(),
+			topology.data(),
+			(int)topology.size()};
+	}
 
 #define CUDA_CHECK(call)                                                                                \
 	{                                                                                                   \
@@ -127,4 +157,4 @@ private:
 	};
 };
 
-#endif	// NEURAL_NETWORK_H
+#endif	// NEURAL_NETWORK_CUH

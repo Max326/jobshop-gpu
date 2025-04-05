@@ -2,7 +2,7 @@
 #include <ctime>
 #include <iostream>
 
-#include "JobShopData.h"
+#include "JobShopData.cuh"
 #include "JobShopHeuristic.cuh"
 
 int main() {
@@ -36,7 +36,7 @@ int main() {
 		
 		// JobShopHeuristic heuristic("weights_and_biases");
 
-		JobShopHeuristic::Solution solution = heuristic.Solve(data);
+		JobShopHeuristic::CPUSolution solution = heuristic.Solve(data);
 
 		// std::cout << "Makespan: " << solution.makespan << std::endl;
 

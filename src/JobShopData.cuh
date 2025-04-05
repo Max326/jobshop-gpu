@@ -12,6 +12,8 @@
 
 #include "FileManager.h"
 
+/* CPU Implementation */
+
 struct Operation {
 	int type;
 	std::vector<int> eligibleMachines;	// List of machines that can perform this operation
@@ -211,4 +213,41 @@ inline JobShopData GenerateData() {
 	return data;
 }
 
+/* GPU Implementation */
+
+struct GPUOperation {
+	int type;
+	int* eligibleMachines;	// Pointer to array in device memory
+	int eligibleCount;
+};
+
+struct GPUJob {
+	int id;
+	GPUOperation* operations;  // Device pointer
+	int operationCount;
+	int nextOpIndex;
+	int lastOpEndTime;
+};
+
+struct GPUProblem {
+	int numMachines;
+	int numJobs;
+	int numOpTypes;
+	GPUJob* jobs;		   // Device pointer
+	int* processingTimes;  // Flattened [opType][machine]
+};
+
+class JobShopDataGPU
+{
+public:
+	void FreeGPUData(GPUProblem& gpuProblem);
+	// Upload CPU data to GPU
+	static GPUProblem UploadToGPU(const JobShopData& problem);
+
+	// Download results from GPU
+	static void DownloadFromGPU(const GPUProblem& gpuProblem);
+
+	// Free GPU memory
+	void DownloadFromGPU(GPUProblem& gpuProblem, JobShopData& cpuProblem);
+};
 #endif	// JOB_SHOP_DATA_H
