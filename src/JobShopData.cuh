@@ -240,7 +240,7 @@ struct GPUProblem {
 class JobShopDataGPU
 {
 public:
-	void FreeGPUData(GPUProblem& gpuProblem);
+	static void FreeGPUData(GPUProblem& gpuProblem);
 	// Upload CPU data to GPU
 	static GPUProblem UploadToGPU(const JobShopData& problem);
 

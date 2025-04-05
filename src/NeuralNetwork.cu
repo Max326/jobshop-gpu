@@ -152,7 +152,8 @@ __device__ float ScaleTanh2(float x) {
 }
 
 __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features) const {
-	extern __shared__ float activations[maxLayerSize];
+	// extern __shared__ float activations[maxLayerSize];
+	float activations[maxLayerSize];
 
 	// Copy input
 	for(int i = 0; i < topology[0]; i++)

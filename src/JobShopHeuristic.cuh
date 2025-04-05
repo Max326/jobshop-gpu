@@ -43,36 +43,21 @@ public:
 	static void FreeGPUSolution(GPUSolution& solution);
 };
 
-struct GPUSolverState {
-	// Problem state
-	int* machine_available_times;
-	int* job_next_op;
-	int* job_last_end;
+// struct GPUSolverState {
+// 	// Problem state
+// 	int* machine_available_times;
+// 	int* job_next_op;
+// 	int* job_last_end;
 
-	// Solution tracking
-	OperationSchedule* schedule;
-	int* schedule_counts;
-	int makespan;
-};
-
-__global__ void SolveFJSSPKernel(
-	const GPUProblem* problems,
-	const NeuralNetwork::DeviceEvaluator nn_eval,
-	SolutionManager::GPUSolution* solutions,
-	int total_problems);
+// 	// Solution tracking
+// 	OperationSchedule* schedule;
+// 	int* schedule_counts;
+// 	int makespan;
+// };
 
 class JobShopHeuristic
 {
 public:
-	// constructor with topology (creating new network)
-	JobShopHeuristic(const std::vector<int>& topology);
-
-	// constructor with file (loading network from file)
-	JobShopHeuristic(const std::string& filename)
-		: neuralNetwork(InitializeNetworkFromFile(filename)) {}
-
-	JobShopHeuristic(NeuralNetwork&& net) : neuralNetwork(std::move(net)) {}
-
 	struct CPUSolution {
 		std::vector<std::vector<OperationSchedule>> schedule;
 		int makespan = 0;
@@ -83,44 +68,31 @@ public:
 
 	CPUSolution Solve(const JobShopData& data);
 
+	// constructor with topology (creating new network)
+	JobShopHeuristic(const std::vector<int>& topology);
+
+	// constructor with file (loading network from file)
+	JobShopHeuristic(const std::string& filename);
+
+	JobShopHeuristic(NeuralNetwork&& net);
+
 	// GPU Interface
 	struct SolverConfig {
 		int maxThreadsPerBlock = 256;
 		int maxOperationsPerMachine = 100;
 	};
 
-	void SolveGPU(const GPUProblem& problem,
-				  SolutionManager::GPUSolution& solution,
-				  const SolverConfig& config = {});
-
-	NeuralNetwork neuralNetwork;
+	void SolveBatch(const GPUProblem* problems,
+					SolutionManager::GPUSolution* solutions,
+					int numProblems);
 
 	void PrintSchedule(const CPUSolution& solution, const JobShopData& data);
 
-	// Add GPU kernel declaration
-#ifdef __CUDACC__
-	__global__ void SolveProblemsGPU(
-		const JobShopData* problems,
-		const float* weights,
-		const float* biases,
-		const int* topology,
-		int num_layers,
-		GPUSolution* solutions);
-#endif
+public:
+	NeuralNetwork neuralNetwork;
 
 private:
-	// JobShopHeuristic(NeuralNetwork&& net) : neuralNetwork(std::move(net)) {}
-
 	static NeuralNetwork InitializeNetworkFromFile(const std::string& filename);
-
-	__device__ void ExtractFeaturesGPU(
-		const JobShopData& data,
-		const Job& job,
-		int opType,
-		int machineId,
-		int* machineAvailableTimes,	 // [num_machines]
-		float* featuresOut			 // Output array
-	);
 
 	std::vector<float> ExtractFeatures(const JobShopData& data,
 									   const Job& job,
@@ -131,5 +103,11 @@ private:
 
 	void UpdateSchedule(JobShopData& data, int jobId, int operationId, int machineId, CPUSolution& solution);
 };
+
+__global__ void SolveFJSSPKernel(
+	const GPUProblem* problems,
+	const NeuralNetwork::DeviceEvaluator nn_eval,
+	SolutionManager::GPUSolution* solutions,
+	int total_problems);
 
 #endif	// JOB_SHOP_HEURISTIC_CUH

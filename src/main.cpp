@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
+#include <vector>
 
 #include "JobShopData.cuh"
 #include "JobShopHeuristic.cuh"
@@ -10,12 +11,13 @@ int main() {
 
 	const bool generateRandomJobs = false;
 	const bool generateRandomNNSetup = false;
+	const int numProblems = 1;	// Start with 1 problem for testing
 
-	const std::vector<int> topology = {4, 32, 16, 1};  // TODO: implement dynamic NN input size
+	const std::vector<int> topology = {4, 32, 16, 1};
 
 	try {
+		// 1. Load or generate problem data
 		JobShopData data;
-
 		if(generateRandomJobs) {
 			data = GenerateData();
 			data.SaveToJson("jobshop_data");
@@ -23,24 +25,37 @@ int main() {
 			data.LoadFromJson("jobshop_data");
 		}
 
+		// 2. Load or generate neural network
 		NeuralNetwork nn;
-
 		if(generateRandomNNSetup) {
-			nn = NeuralNetwork(topology); // Generate new
-            nn.SaveToJson("weights_and_biases");
+			nn = NeuralNetwork(topology);
+			nn.SaveToJson("weights_and_biases");
 		} else {
-            nn.LoadFromJson("weights_and_biases"); // Load existing
+			nn.LoadFromJson("weights_and_biases");
 		}
 
-		JobShopHeuristic heuristic(std::move(nn)); // Transfer ownership
-		
-		// JobShopHeuristic heuristic("weights_and_biases");
+		// 3. Prepare GPU data
+		// a) Upload the problem to GPU
+		GPUProblem gpuProblem = JobShopDataGPU::UploadToGPU(data);
 
-		JobShopHeuristic::CPUSolution solution = heuristic.Solve(data);
+		// b) Create GPU solution container
+		SolutionManager::GPUSolution gpuSolution =
+			SolutionManager::CreateGPUSolution(data.numMachines, 100);	// 100 ops per machine max
 
-		// std::cout << "Makespan: " << solution.makespan << std::endl;
+		// 4. Create heuristic solver
+		JobShopHeuristic heuristic(std::move(nn));
 
+		// 5. Solve on GPU (even though we're just doing one problem)
+		heuristic.SolveBatch(&gpuProblem, &gpuSolution, numProblems);
+
+		// 6. Download and display results
+		JobShopHeuristic::CPUSolution solution;
+		solution.FromGPU(gpuSolution);
 		heuristic.PrintSchedule(solution, data);
+
+		// 7. Clean up GPU memory
+		SolutionManager::FreeGPUSolution(gpuSolution);
+		JobShopDataGPU::FreeGPUData(gpuProblem);
 
 	} catch(const std::exception& e) {
 		std::cerr << "Error: " << e.what() << std::endl;

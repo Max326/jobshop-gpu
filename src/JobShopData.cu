@@ -10,6 +10,12 @@ GPUProblem JobShopDataGPU::UploadToGPU(const JobShopData& problem) {
 	gpuProblem.numJobs = problem.numJobs;
 	gpuProblem.numOpTypes = problem.numOpTypes;
 
+	// 2. Debug print before upload
+	std::cout << "Uploading problem with:\n";
+	std::cout << "  Machines: " << problem.numMachines << "\n";
+	std::cout << "  Jobs: " << problem.numJobs << "\n";
+	std::cout << "  First job operations: " << problem.jobs[0].operations.size() << "\n";
+
 	// 2. Process jobs
 	cudaMalloc(&gpuProblem.jobs, sizeof(GPUJob) * problem.numJobs);
 	std::vector<GPUJob> tempJobs(problem.numJobs);
