@@ -25,14 +25,10 @@ public:
 	NeuralNetwork(NeuralNetwork&& other) noexcept;
 	NeuralNetwork& operator=(NeuralNetwork&& other) noexcept;
 
-	// NeuralNetwork(const NeuralNetwork&) = delete;
 	NeuralNetwork(const NeuralNetwork&) = default;
-
-	// NeuralNetwork& operator=(const NeuralNetwork&) = delete;
 
 	~NeuralNetwork();
 
-	// void Forward(const std::vector<float>& input, std::vector<float>& output);
 	std::vector<float> Forward(const std::vector<float>& input);
 
 	// GPU-compatible forward pass (weights/biases must be pre-flattened)
@@ -41,7 +37,7 @@ public:
 		const float* biases,   // Flattened [layer][neuron]
 		const int* topology,   // Layer sizes
 		const float* input,	   // Input features
-		int num_layers);
+		int numLayers);
 
 	void SaveToJson(const std::string& filename) const {
 		FileManager::EnsureDataDirExists();
@@ -83,17 +79,7 @@ public:
 	void GenerateWeights();
 	void GenerateBiases();
 
-public:
-	static const int maxLayerSize = 32;
-
-	struct CudaData;				 // Forward declaration
-	std::unique_ptr<CudaData> cudaData;	 // Enkapsulacja danych CUDA
-
-	std::vector<int> topology;
-	std::vector<std::vector<float>> weights;
-	std::vector<std::vector<float>> biases;
-	std::vector<size_t> layerOffsets;
-	std::vector<size_t> biasOffsets;
+	void FlattenParams();
 
 #define CUDA_CHECK(call)                                                                                \
 	{                                                                                                   \
@@ -103,6 +89,26 @@ public:
 			exit(1);                                                                                    \
 		}                                                                                               \
 	}
+
+public:
+	struct CudaData;					 // Forward declaration
+	std::unique_ptr<CudaData> cudaData;	 // Cuda data incapsulation
+
+	std::vector<int> topology;
+	std::vector<std::vector<float>> weights;
+	std::vector<std::vector<float>> biases;
+	std::vector<size_t> layerOffsets;
+	std::vector<size_t> biasOffsets;
+
+	const float* GetFlattenedWeights() const { return flattenedWeights.data(); }
+	const float* GetFlattenedBiases() const { return flattenedBiases.data(); }
+	const int* GetTopology() const { return topology.data(); }
+	int GetNumLayers() const { return topology.size(); }
+
+private:
+	static const int maxLayerSize = 32;
+	std::vector<float> flattenedWeights;
+	std::vector<float> flattenedBiases;
 
 private:
 	void InitializeCudaData();

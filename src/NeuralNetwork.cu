@@ -279,3 +279,14 @@ void NeuralNetwork::GenerateBiases() {
 		this->biases.push_back(layerBiases);
 	}
 }
+
+void NeuralNetwork::FlattenParams() {
+	for(const auto& layer: weights) {
+		flattenedWeights.insert(flattenedWeights.end(),
+								  layer.begin(), layer.end());
+	}
+	for(const auto& layer: biases) {
+		flattenedBiases.insert(flattenedBiases.end(),
+								 layer.begin(), layer.end());
+	}
+}
