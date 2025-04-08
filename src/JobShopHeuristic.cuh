@@ -43,18 +43,6 @@ public:
 	static void FreeGPUSolution(GPUSolution& solution);
 };
 
-// struct GPUSolverState {
-// 	// Problem state
-// 	int* machine_available_times;
-// 	int* job_next_op;
-// 	int* job_last_end;
-
-// 	// Solution tracking
-// 	OperationSchedule* schedule;
-// 	int* schedule_counts;
-// 	int makespan;
-// };
-
 class JobShopHeuristic
 {
 public:

@@ -243,10 +243,6 @@ void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operatio
 								   ? 0
 								   : solution.schedule[machineId].back().endTime;
 
-	// Start time is the later of machine or job availability
-	// int startTime = std::max(solution.jobEndTimes[jobId],
-	//  solution.machineEndTimes[machineId]);
-
 	int startTime = std::max(machineAvailableTime, job.lastOpEndTime);	// TODO: source the last operation end time from the schedule
 
 	int endTime = startTime + processingTime;
@@ -298,6 +294,7 @@ void JobShopHeuristic::PrintSchedule(const CPUSolution& solution, const JobShopD
 	std::cout << "Makespan: " << solution.makespan << "\n"
 			  << std::endl;
 }
+
 __global__ void SolveFJSSPKernel(
 	const GPUProblem* problems,
 	const NeuralNetwork::DeviceEvaluator nn_eval,
