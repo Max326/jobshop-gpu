@@ -7,16 +7,17 @@
 
 #include "NeuralNetwork.cuh"
 
-struct NeuralNetwork::CudaData {
-	float *d_weights = nullptr;
-	float *d_biases = nullptr;
-	float *d_input = nullptr;
-	float *d_output = nullptr;
-};
 
 void NeuralNetwork::InitializeCudaData() {
 	// 1. Calculate offsets for each layer's weights and biases
 	FlattenParams();
+
+	std::cout << "Flattened weights size: " << flattenedWeights.size() << "\n";
+	std::cout << "Flattened biases size: " << flattenedBiases.size() << "\n";
+	std::cout << "First few weights: ";
+	for(int i = 0; i < std::min(5, (int)flattenedWeights.size()); i++)
+		std::cout << flattenedWeights[i] << " ";
+	std::cout << "\n";
 
 	layerOffsets.resize(weights.size());
 	biasOffsets.resize(biases.size());
@@ -152,26 +153,60 @@ __device__ float ScaleTanh2(float x) {
 }
 
 __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features) const {
-	// extern __shared__ float activations[maxLayerSize];
-	float activations[maxLayerSize];
+	const int MAX_LAYER_SIZE = 32;	// Match your header definition
+	float activations[MAX_LAYER_SIZE];
 
-	// Copy input
-	for(int i = 0; i < topology[0]; i++)
+	// 1. Validate input size
+	if(topology[0] > MAX_LAYER_SIZE) return 0.0f;
+
+	// 2. Copy input with bounds checking
+	for(int i = 0; i < topology[0] && i < MAX_LAYER_SIZE; i++) {
 		activations[i] = features[i];
+	}
 
-	// Forward pass
+	// printf("Input features: %.2f %.2f %.2f %.2f\n",
+	// 	   features[0], features[1], features[2], features[3]);
+
 	int weight_offset = 0;
 	int bias_offset = 0;
+	int total_weights = 0;
+	int total_biases = 0;
+
+	// 3. Pre-calculate total weights/biases for bounds checking
+	for(int i = 1; i < num_layers; i++) {
+		total_weights += topology[i - 1] * topology[i];
+		total_biases += topology[i];
+	}
 
 	for(int layer = 1; layer < num_layers; layer++) {
 		int in_size = topology[layer - 1];
 		int out_size = topology[layer];
 
+		// 4. Validate layer dimensions
+		if(out_size > MAX_LAYER_SIZE) return 0.0f;
+
 		for(int neuron = 0; neuron < out_size; neuron++) {
-			float sum = biases[bias_offset + neuron];
-			for(int i = 0; i < in_size; i++) {
-				sum += activations[i] * weights[weight_offset + neuron * in_size + i];
+			// 5. Check bias access
+			if(bias_offset + neuron >= total_biases) {
+				printf("Bias access out of bounds: %d >= %d\n",
+					   bias_offset + neuron, total_biases);
+				return 0.0f;
 			}
+
+			float sum = biases[bias_offset + neuron];
+
+			for(int i = 0; i < in_size; i++) {
+				// 6. Check weight access
+				int weight_idx = weight_offset + neuron * in_size + i;
+				if(weight_idx >= total_weights) {
+					printf("Weight access out of bounds: %d >= %d\n",
+						   weight_idx, total_weights);
+					return 0.0f;
+				}
+
+				sum += activations[i] * weights[weight_idx];
+			}
+
 			activations[neuron] = ScaleTanh2(sum);
 		}
 
@@ -179,7 +214,7 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
 		bias_offset += out_size;
 	}
 
-	return activations[0];	// Single output
+	return activations[0];
 }
 
 void NeuralNetwork::GenerateWeights() {

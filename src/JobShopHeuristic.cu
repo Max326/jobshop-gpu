@@ -125,7 +125,7 @@ SolutionManager::GPUSolution SolutionManager::CreateGPUSolution(int numMachines,
 void SolutionManager::FreeGPUSolution(SolutionManager::GPUSolution& sol) {
 	cudaFree(sol.schedule);
 	cudaFree(sol.scheduleCounts);
-	sol = GPUSolution{}; // Reset the struct
+	sol = GPUSolution {};  // Reset the struct
 }
 
 // JobShopHeuristic::CPUSolution JobShopHeuristic::Solve(const JobShopData& data) {  //! obsolete
@@ -298,7 +298,6 @@ void JobShopHeuristic::PrintSchedule(const CPUSolution& solution, const JobShopD
 	std::cout << "Makespan: " << solution.makespan << "\n"
 			  << std::endl;
 }
-
 __global__ void SolveFJSSPKernel(
 	const GPUProblem* problems,
 	const NeuralNetwork::DeviceEvaluator nn_eval,
@@ -310,6 +309,10 @@ __global__ void SolveFJSSPKernel(
 	GPUProblem problem = problems[problem_id];
 	SolutionManager::GPUSolution solution = solutions[problem_id];
 
+	// Validation checks
+	if(problem.numJobs <= 0 || problem.numMachines <= 0) return;
+	if(problem.jobs == nullptr || problem.processingTimes == nullptr) return;
+
 	int machine_times[MAX_MACHINES] = {0};
 	int job_next[MAX_JOBS] = {0};
 	int job_last[MAX_JOBS] = {0};
@@ -319,15 +322,32 @@ __global__ void SolveFJSSPKernel(
 		int best_job = -1, best_op = -1, best_machine = -1;
 
 		for(int job = 0; job < problem.numJobs; job++) {
+			// Skip if no operations left
 			if(job_next[job] >= problem.jobs[job].operationCount) continue;
 
 			GPUOperation op = problem.jobs[job].operations[job_next[job]];
+
+			// Validate operation
+			if(op.eligibleCount <= 0 || op.eligibleMachines == nullptr) continue;
+
 			for(int m = 0; m < op.eligibleCount; m++) {
 				int machine = op.eligibleMachines[m];
+
+				// Validate machine index
+				if(machine < 0 || machine >= problem.numMachines) continue;
+
 				int start_time = max(machine_times[machine], job_last[job]);
 
+				// Calculate processing time with bounds checking
+				int ptime = 0;
+				int type_idx = op.type * problem.numMachines + machine;
+				if(type_idx >= 0 && type_idx < problem.numOpTypes * problem.numMachines) {
+					ptime = problem.processingTimes[type_idx];
+				}
+				if(ptime <= 0) continue;
+
 				float features[4] = {
-					static_cast<float>(problem.processingTimes[op.type * problem.numMachines + machine]),
+					static_cast<float>(ptime),
 					static_cast<float>(start_time - machine_times[machine]),
 					static_cast<float>(job_last[job] - machine_times[machine]),
 					static_cast<float>(problem.jobs[job].operationCount)};
@@ -343,17 +363,32 @@ __global__ void SolveFJSSPKernel(
 			}
 		}
 
-		if(best_job == -1) break;
+		if(best_job == -1) break;  // No more operations to schedule
 
-		int processing_time = problem.processingTimes[problem.jobs[best_job].operations[best_op].type * problem.numMachines + best_machine];
-		int end_time = max(machine_times[best_machine], job_last[best_job]) + processing_time;
+		// Validate indices before scheduling
+		if(best_machine < 0 || best_machine >= problem.numMachines) continue;
+		if(best_job < 0 || best_job >= problem.numJobs) continue;
 
+		// Calculate processing time with validation
+		int ptime = 0;
+		GPUOperation best_op_data = problem.jobs[best_job].operations[best_op];
+		int type_idx = best_op_data.type * problem.numMachines + best_machine;
+		if(type_idx >= 0 && type_idx < problem.numOpTypes * problem.numMachines) {
+			ptime = problem.processingTimes[type_idx];
+		}
+		if(ptime <= 0) continue;
+
+		int end_time = max(machine_times[best_machine], job_last[best_job]) + ptime;
+
+		// Schedule the operation
 		int op_index = atomicAdd(&solution.scheduleCounts[best_machine], 1);
-		solution.schedule[best_machine * MAX_OPS + op_index] = {
-			best_job,
-			problem.jobs[best_job].operations[best_op].type,
-			end_time - processing_time,
-			end_time};
+		if(op_index < MAX_OPS) {  // Prevent buffer overflow
+			solution.schedule[best_machine * MAX_OPS + op_index] = {
+				best_job,
+				best_op_data.type,
+				end_time - ptime,
+				end_time};
+		}
 
 		machine_times[best_machine] = end_time;
 		job_last[best_job] = end_time;

@@ -5,24 +5,18 @@
 GPUProblem JobShopDataGPU::UploadToGPU(const JobShopData& problem) {
 	GPUProblem gpuProblem;
 
-	// 1. Allocate and copy basic info
+	// 1. Copy basic info
 	gpuProblem.numMachines = problem.numMachines;
 	gpuProblem.numJobs = problem.numJobs;
 	gpuProblem.numOpTypes = problem.numOpTypes;
 
-	// 2. Debug print before upload
-	std::cout << "Uploading problem with:\n";
-	std::cout << "  Machines: " << problem.numMachines << "\n";
-	std::cout << "  Jobs: " << problem.numJobs << "\n";
-	std::cout << "  First job operations: " << problem.jobs[0].operations.size() << "\n";
-
-	// 2. Process jobs
+	// 2. Process jobs (using pinned memory for better performance)
+	std::vector<GPUJob> hostJobs(problem.numJobs);
 	cudaMalloc(&gpuProblem.jobs, sizeof(GPUJob) * problem.numJobs);
-	std::vector<GPUJob> tempJobs(problem.numJobs);
 
 	for(int j = 0; j < problem.numJobs; j++) {
 		const auto& cpuJob = problem.jobs[j];
-		GPUJob gpuJob;
+		GPUJob& gpuJob = hostJobs[j];
 
 		gpuJob.id = cpuJob.id;
 		gpuJob.nextOpIndex = cpuJob.nextOpIndex;
@@ -31,42 +25,48 @@ GPUProblem JobShopDataGPU::UploadToGPU(const JobShopData& problem) {
 
 		// Allocate operations
 		cudaMalloc(&gpuJob.operations, sizeof(GPUOperation) * gpuJob.operationCount);
-		std::vector<GPUOperation> tempOps(gpuJob.operationCount);
+		std::vector<GPUOperation> hostOps(gpuJob.operationCount);
 
 		for(int o = 0; o < gpuJob.operationCount; o++) {
 			const auto& cpuOp = cpuJob.operations[o];
-			GPUOperation gpuOp;
+			GPUOperation& gpuOp = hostOps[o];
 
 			gpuOp.type = cpuOp.type;
 			gpuOp.eligibleCount = cpuOp.eligibleMachines.size();
 
-			// Allocate eligible machines
+			// Allocate and copy eligible machines
 			cudaMalloc(&gpuOp.eligibleMachines, sizeof(int) * gpuOp.eligibleCount);
 			cudaMemcpy(gpuOp.eligibleMachines, cpuOp.eligibleMachines.data(),
 					   sizeof(int) * gpuOp.eligibleCount, cudaMemcpyHostToDevice);
-
-			tempOps[o] = gpuOp;
 		}
 
 		// Copy operations to device
-		cudaMemcpy(gpuJob.operations, tempOps.data(),
+		cudaMemcpy(gpuJob.operations, hostOps.data(),
 				   sizeof(GPUOperation) * gpuJob.operationCount, cudaMemcpyHostToDevice);
-
-		tempJobs[j] = gpuJob;
 	}
 
-	// 3. Process processing times (flatten 2D array)
-	int processingSize = problem.numOpTypes * problem.numMachines;
-	cudaMalloc(&gpuProblem.processingTimes, sizeof(int) * processingSize);
+	// CRITICAL: Copy jobs array to device
+	cudaMemcpy(gpuProblem.jobs, hostJobs.data(),
+			   sizeof(GPUJob) * problem.numJobs, cudaMemcpyHostToDevice);
 
-	std::vector<int> flatTimes(processingSize);
+	// 3. Process processing times
+	std::vector<int> flatTimes(problem.numOpTypes * problem.numMachines);
 	for(int o = 0; o < problem.numOpTypes; o++) {
 		for(int m = 0; m < problem.numMachines; m++) {
 			flatTimes[o * problem.numMachines + m] = problem.processingTimes[o][m];
 		}
 	}
+	cudaMalloc(&gpuProblem.processingTimes, sizeof(int) * flatTimes.size());
 	cudaMemcpy(gpuProblem.processingTimes, flatTimes.data(),
-			   sizeof(int) * processingSize, cudaMemcpyHostToDevice);
+			   sizeof(int) * flatTimes.size(), cudaMemcpyHostToDevice);
+
+	// Error checking
+	cudaError_t err = cudaGetLastError();
+	if(err != cudaSuccess) {
+		FreeGPUData(gpuProblem);  // Clean up if error
+		throw std::runtime_error("CUDA error during upload: " +
+								 std::string(cudaGetErrorString(err)));
+	}
 
 	return gpuProblem;
 }

@@ -5,15 +5,15 @@
 
 // i don't know why this is needed, but it is (is it????)
 #ifndef __host__
-#define __host__
+#	define __host__
 #endif
 
 #ifndef __device__
-#define __device__
+#	define __device__
 #endif
 
 #ifndef __global__
-#define __global__
+#	define __global__
 #endif
 
 #include <filesystem>
@@ -104,9 +104,13 @@ public:
 
 	// Prepares evaluator for GPU
 	__host__ DeviceEvaluator GetDeviceEvaluator() const {
+		if(!cudaData || !cudaData->d_weights || !cudaData->d_biases) {
+			throw std::runtime_error("CUDA data not initialized");
+		}
+
 		return {
-			flattenedWeights.data(),
-			flattenedBiases.data(),
+			cudaData->d_weights,
+			cudaData->d_biases,
 			topology.data(),
 			(int)topology.size()};
 	}
@@ -121,7 +125,12 @@ public:
 	}
 
 public:
-	struct CudaData;					 // Forward declaration
+	struct CudaData {
+		float* d_weights = nullptr;
+		float* d_biases = nullptr;
+		float* d_input = nullptr;
+		float* d_output = nullptr;
+	};	// Forward declaration
 	std::unique_ptr<CudaData> cudaData;	 // Cuda data incapsulation
 
 	std::vector<int> topology;
