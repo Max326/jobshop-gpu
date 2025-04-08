@@ -48,6 +48,11 @@ int main() {
 		// 5. Solve on GPU (even though we're just doing one problem)
 		heuristic.SolveBatch(&gpuProblem, &gpuSolution, numProblems);
 
+		cudaError_t kernelErr = cudaGetLastError();
+		if(kernelErr != cudaSuccess) {
+			std::cerr << "Kernel error: " << cudaGetErrorString(kernelErr) << "\n";
+		}
+
 		// 6. Download and display results
 		JobShopHeuristic::CPUSolution solution;
 		solution.FromGPU(gpuSolution);
