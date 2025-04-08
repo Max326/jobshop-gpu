@@ -164,9 +164,6 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
 		activations[i] = features[i];
 	}
 
-	// printf("Input features: %.2f %.2f %.2f %.2f\n",
-	// 	   features[0], features[1], features[2], features[3]);
-
 	int weight_offset = 0;
 	int bias_offset = 0;
 	int total_weights = 0;
@@ -219,9 +216,6 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
 
 void NeuralNetwork::GenerateWeights() {
 	weights.clear();
-	// if(weights != nullptr) {
-	// this->weights = *weights;
-	// } else {
 	for(size_t i = 1; i < topology.size(); ++i) {
 		std::vector<float> layerWeights(topology[i] * topology[i - 1]);
 		float range = sqrt(6.0f / (topology[i - 1] + topology[i]));	 // Xavier initialization

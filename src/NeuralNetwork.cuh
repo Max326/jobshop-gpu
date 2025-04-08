@@ -43,14 +43,6 @@ public:
 
 	std::vector<float> Forward(const std::vector<float>& input);
 
-	// // GPU-compatible forward pass (weights/biases must be pre-flattened)
-	// static __device__ float ForwardGPU(
-	// 	const float* weights,  // Flattened [layer][in][out]
-	// 	const float* biases,   // Flattened [layer][neuron]
-	// 	const int* topology,   // Layer sizes
-	// 	const float* input,	   // Input features
-	// 	int numLayers);
-
 	void SaveToJson(const std::string& filename) const {
 		FileManager::EnsureDataDirExists();
 		std::string full_path = FileManager::GetFullPath(filename);
