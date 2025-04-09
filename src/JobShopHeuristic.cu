@@ -56,20 +56,21 @@ void JobShopHeuristic::CPUSolution::FromGPU(const SolutionManager::GPUSolution& 
 	// 1. Download makespan
 	cudaMemcpy(&makespan, gpuSol.makespan, sizeof(int), cudaMemcpyDeviceToHost);
 
-	// 2. Resize schedule structure
-	schedule.resize(gpuSol.numMachines);
-
-	// 3. Download operation counts per machine
+	// 2. Download operation counts per machine
 	std::vector<int> counts(gpuSol.numMachines);
 	cudaMemcpy(counts.data(), gpuSol.scheduleCounts,
 			   sizeof(int) * gpuSol.numMachines,
 			   cudaMemcpyDeviceToHost);
 
-	// 4. Download all operation entries (flat layout: [machine * MAX_OPS + op])
+	// 3. Download all operation entries (flat layout: [machine * MAX_OPS + op])
+	cudaDeviceSynchronize();  // Ensure all kernel work is done
 	std::vector<OperationSchedule> allOps(gpuSol.numMachines * MAX_OPS);
 	cudaMemcpy(allOps.data(), gpuSol.schedule,
 			   sizeof(OperationSchedule) * allOps.size(),
 			   cudaMemcpyDeviceToHost);
+
+	// 4. Resize schedule structure
+	schedule.resize(gpuSol.numMachines);
 
 	// 5. Reconstruct the 2D schedule
 	for(int m = 0; m < gpuSol.numMachines; ++m) {
