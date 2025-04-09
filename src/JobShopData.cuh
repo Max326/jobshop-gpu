@@ -244,9 +244,6 @@ public:
 	// Upload CPU data to GPU
 	static GPUProblem UploadToGPU(const JobShopData& problem);
 
-	// Download results from GPU
-	static void DownloadFromGPU(const GPUProblem& gpuProblem);
-
 	// Free GPU memory
 	void DownloadFromGPU(GPUProblem& gpuProblem, JobShopData& cpuProblem);
 };

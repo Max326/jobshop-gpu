@@ -18,13 +18,13 @@
 #include "JobShopData.cuh"
 #include "NeuralNetwork.cuh"
 
-#define MAX_MACHINES 30
+#define MAX_MACHINES 30	 // TODO: make this dynamic
 #define MAX_JOBS	 30
 #define MAX_OPS		 1000
 
 struct OperationSchedule {
 	int jobId;
-	int opId;
+	int opType;
 	int startTime;
 	int endTime;
 };
@@ -35,7 +35,7 @@ public:
 	struct GPUSolution {
 		OperationSchedule* schedule;  // [machine][operation]
 		int* scheduleCounts;		  // Operations per machine
-		int makespan;
+		int* makespan;
 		int numMachines;
 	};
 
