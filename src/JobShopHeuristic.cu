@@ -179,6 +179,10 @@ void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operatio
 	solution.makespan = std::max(solution.makespan, endTime);
 
 	// data.jobs[jobId].operations.pop_back();	 // Remove the scheduled operation
+
+	std::cout << "Scheduled job " << jobId << ", operation " << operationIdx
+			  << " on machine " << machineId << " (" << startTime
+			  << "-" << endTime << "), makespan: " << solution.makespan << std::endl;
 }
 
 void JobShopHeuristic::PrintSchedule(const Solution& solution, const JobShopData& data) {
