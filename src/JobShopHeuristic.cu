@@ -156,137 +156,6 @@ void SolutionManager::FreeGPUSolution(SolutionManager::GPUSolution& sol) {
 	sol = GPUSolution {};	 // Reset the struct
 }
 
-/*
-JobShopHeuristic::CPUSolution JobShopHeuristic::Solve(const JobShopData& data) {  //! obsolete
-	CPUSolution solution;
-	solution.makespan = 0;
-	solution.schedule.resize(data.numMachines);
-
-	// solution.machineEndTimes.resize(data.numMachines, 0);
-
-	JobShopData modifiedData = data;
-
-	while(true) {
-		// Znajdź dostępne operacje
-		float bestScore = -FLT_MAX;
-		int bestJobId = -1, bestOperationIdx = -1, bestMachineId = -1;
-
-		int bestStartTime = 0;
-		int bestProcessingTime = 0;
-
-		for(int jobId = 0; jobId < modifiedData.numJobs; ++jobId) {
-			auto& job = modifiedData.jobs[jobId];
-
-			// Skip if no operations left or next operation isn't ready
-			if(job.nextOpIndex >= job.operations.size()) continue;
-
-			const auto& operation = job.operations[job.nextOpIndex];
-			const int opType = operation.type;
-
-			for(int machineId: operation.eligibleMachines) {
-				if(modifiedData.processingTimes[opType][machineId] == 0) continue;
-
-				// Get the time at which the machine will become available
-				const int machineAvailableTime = solution.schedule[machineId].empty()
-													 ? 0
-													 : solution.schedule[machineId].back().endTime;
-
-				const int startTime = std::max(machineAvailableTime, job.lastOpEndTime);
-
-				// const int envelope = job.lastOpEndTime - machineAvailableTime;
-
-				const int processingTime = data.processingTimes[opType][machineId];
-
-				// TODO: rule 1: check machine availability and save that to "envelope"
-				// TODO: rule 2: check for 'holes' in the schedule
-
-				// TODO: implement dynamic NN input size, not from topology
-				std::vector<float> features = ExtractFeatures(modifiedData, job, opType, machineId, startTime, machineAvailableTime);
-
-				// std::cout << "Features: " << features[0] << ", " << features[1] << ", " << features[2] << std::endl;
-
-				// features.resize(4);
-
-				std::vector<float> output = neuralNetwork.Forward(features);
-
-				float score = output[0];
-
-				if(score > bestScore) {
-					bestScore = score;
-					bestJobId = jobId;
-					bestOperationIdx = job.nextOpIndex;
-					bestMachineId = machineId;
-					bestStartTime = startTime;
-					bestProcessingTime = processingTime;
-				}
-			}
-		}
-
-		if(bestJobId == -1) break;	// Wszystkie operacje zaplanowane
-
-		// Zaplanuj operację na maszynie
-		UpdateSchedule(modifiedData, bestJobId, bestOperationIdx, bestMachineId, solution);
-	}
-
-	return solution;
-}
-*/
-
-std::vector<float> JobShopHeuristic::ExtractFeatures(const JobShopData& data,  //! obsolete
-													 const Job& job,
-													 const int& operationType,
-													 const int& machineId,
-													 const int& startTime,
-													 const int& machineAvailableTime) const {
-	std::vector<float> features;
-
-	int waitTime = startTime - machineAvailableTime;
-
-	int envelope = job.lastOpEndTime - machineAvailableTime;
-
-	features.push_back(static_cast<float>(data.processingTimes[operationType][machineId]));
-
-	features.push_back(static_cast<float>(waitTime));
-
-	features.push_back(static_cast<float>(envelope));  // TODO: vector?
-
-	features.push_back(static_cast<float>(data.jobs[job.id].operations.size()));
-
-	return features;
-}
-
-void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operationIdx,  //! obsolete
-									  int machineId, CPUSolution& solution) {
-	auto& job = data.jobs[jobId];
-	const auto& operation = job.operations[operationIdx];
-
-	int processingTime = data.processingTimes[operation.type][machineId];
-
-	// Validate processing time
-	if(processingTime <= 0) {
-		std::cerr << "Warning: Attempted to schedule zero-duration operation\n";
-		return;
-	}
-
-	// Get machine's last operation end time (0 if no operations yet)
-	int machineAvailableTime = solution.schedule[machineId].empty()
-								   ? 0
-								   : solution.schedule[machineId].back().endTime;
-
-	int startTime = std::max(machineAvailableTime, job.lastOpEndTime);	// TODO: source the last operation end time from the schedule
-
-	int endTime = startTime + processingTime;
-
-	solution.schedule[machineId].push_back({jobId, operation.type, startTime, endTime});
-
-	job.lastOpEndTime = endTime;  // Update job's last operation end time
-	job.nextOpIndex++;
-
-	solution.makespan = std::max(solution.makespan, endTime);
-
-	// data.jobs[jobId].operations.pop_back();	 // Remove the scheduled operation
-}
-
 void JobShopHeuristic::PrintSchedule(const CPUSolution& solution, const JobShopData& data) {
 	std::cout << "\n=== FINAL SCHEDULE ===" << std::endl;
 
@@ -432,4 +301,135 @@ __global__ void SolveFJSSPKernel(
 			   best_job, best_op_data.type, best_machine,
 			   end_time - ptime, end_time, *solution.makespan);
 	}
+}
+
+/*
+JobShopHeuristic::CPUSolution JobShopHeuristic::Solve(const JobShopData& data) {  //! obsolete
+	CPUSolution solution;
+	solution.makespan = 0;
+	solution.schedule.resize(data.numMachines);
+
+	// solution.machineEndTimes.resize(data.numMachines, 0);
+
+	JobShopData modifiedData = data;
+
+	while(true) {
+		// Znajdź dostępne operacje
+		float bestScore = -FLT_MAX;
+		int bestJobId = -1, bestOperationIdx = -1, bestMachineId = -1;
+
+		int bestStartTime = 0;
+		int bestProcessingTime = 0;
+
+		for(int jobId = 0; jobId < modifiedData.numJobs; ++jobId) {
+			auto& job = modifiedData.jobs[jobId];
+
+			// Skip if no operations left or next operation isn't ready
+			if(job.nextOpIndex >= job.operations.size()) continue;
+
+			const auto& operation = job.operations[job.nextOpIndex];
+			const int opType = operation.type;
+
+			for(int machineId: operation.eligibleMachines) {
+				if(modifiedData.processingTimes[opType][machineId] == 0) continue;
+
+				// Get the time at which the machine will become available
+				const int machineAvailableTime = solution.schedule[machineId].empty()
+													 ? 0
+													 : solution.schedule[machineId].back().endTime;
+
+				const int startTime = std::max(machineAvailableTime, job.lastOpEndTime);
+
+				// const int envelope = job.lastOpEndTime - machineAvailableTime;
+
+				const int processingTime = data.processingTimes[opType][machineId];
+
+				// TODO: rule 1: check machine availability and save that to "envelope"
+				// TODO: rule 2: check for 'holes' in the schedule
+
+				// TODO: implement dynamic NN input size, not from topology
+				std::vector<float> features = ExtractFeatures(modifiedData, job, opType, machineId, startTime, machineAvailableTime);
+
+				// std::cout << "Features: " << features[0] << ", " << features[1] << ", " << features[2] << std::endl;
+
+				// features.resize(4);
+
+				std::vector<float> output = neuralNetwork.Forward(features);
+
+				float score = output[0];
+
+				if(score > bestScore) {
+					bestScore = score;
+					bestJobId = jobId;
+					bestOperationIdx = job.nextOpIndex;
+					bestMachineId = machineId;
+					bestStartTime = startTime;
+					bestProcessingTime = processingTime;
+				}
+			}
+		}
+
+		if(bestJobId == -1) break;	// Wszystkie operacje zaplanowane
+
+		// Zaplanuj operację na maszynie
+		UpdateSchedule(modifiedData, bestJobId, bestOperationIdx, bestMachineId, solution);
+	}
+
+	return solution;
+}
+*/
+
+std::vector<float> JobShopHeuristic::ExtractFeatures(const JobShopData& data,  //! obsolete
+													 const Job& job,
+													 const int& operationType,
+													 const int& machineId,
+													 const int& startTime,
+													 const int& machineAvailableTime) const {
+	std::vector<float> features;
+
+	int waitTime = startTime - machineAvailableTime;
+
+	int envelope = job.lastOpEndTime - machineAvailableTime;
+
+	features.push_back(static_cast<float>(data.processingTimes[operationType][machineId]));
+
+	features.push_back(static_cast<float>(waitTime));
+
+	features.push_back(static_cast<float>(envelope));  // TODO: vector?
+
+	features.push_back(static_cast<float>(data.jobs[job.id].operations.size()));
+
+	return features;
+}
+
+void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operationIdx,  //! obsolete
+									  int machineId, CPUSolution& solution) {
+	auto& job = data.jobs[jobId];
+	const auto& operation = job.operations[operationIdx];
+
+	int processingTime = data.processingTimes[operation.type][machineId];
+
+	// Validate processing time
+	if(processingTime <= 0) {
+		std::cerr << "Warning: Attempted to schedule zero-duration operation\n";
+		return;
+	}
+
+	// Get machine's last operation end time (0 if no operations yet)
+	int machineAvailableTime = solution.schedule[machineId].empty()
+								   ? 0
+								   : solution.schedule[machineId].back().endTime;
+
+	int startTime = std::max(machineAvailableTime, job.lastOpEndTime);	// TODO: source the last operation end time from the schedule
+
+	int endTime = startTime + processingTime;
+
+	solution.schedule[machineId].push_back({jobId, operation.type, startTime, endTime});
+
+	job.lastOpEndTime = endTime;  // Update job's last operation end time
+	job.nextOpIndex++;
+
+	solution.makespan = std::max(solution.makespan, endTime);
+
+	// data.jobs[jobId].operations.pop_back();	 // Remove the scheduled operation
 }
