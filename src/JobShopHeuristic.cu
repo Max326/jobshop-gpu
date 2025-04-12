@@ -205,6 +205,12 @@ __global__ void SolveFJSSPKernel(
 	const NeuralNetwork::DeviceEvaluator nn_eval,
 	SolutionManager::GPUSolutions* solutions,
 	int total_problems) {
+	int tid = blockIdx.x * blockDim.x + threadIdx.x;
+	if(tid == 0) {
+		printf("Launched %d blocks, %d threads (total threads = %d)\n",
+			   gridDim.x, blockDim.x, gridDim.x * blockDim.x);
+	}
+
 	int problem_id = blockIdx.x * blockDim.x + threadIdx.x;
 	if(problem_id >= total_problems) return;
 

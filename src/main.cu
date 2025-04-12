@@ -52,7 +52,7 @@ int main() {
 
 		// 4. Create heuristic solver
 		JobShopHeuristic heuristic(std::move(nn));
-
+		
 		// 5. Solve on GPU (even though we're just doing one problem)
 		heuristic.SolveBatch(d_problems, &solutions_batch, numProblems);
 
