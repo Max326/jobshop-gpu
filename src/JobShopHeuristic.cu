@@ -206,6 +206,7 @@ __global__ void SolveFJSSPKernel(
 	SolutionManager::GPUSolution solution = solutions[problem_id];
 
 	printf("Solving problem %d\n", problem_id);
+	int scheduledOps = 0;
 
 	// Validation checks
 	if(problem.numJobs <= 0 || problem.numMachines <= 0) return;
@@ -297,9 +298,11 @@ __global__ void SolveFJSSPKernel(
 
 		atomicMax(solution.makespan, end_time);
 
-		printf("Scheduled: Job %d, OpType %d on Machine %d (%d-%d), makespan: %d\n",
-			   best_job, best_op_data.type, best_machine,
+		printf("%d: Scheduled: Job %d, OpType %d on Machine %d (%d-%d), makespan: %d\n",
+			   scheduledOps, best_job, best_op_data.type, best_machine,
 			   end_time - ptime, end_time, *solution.makespan);
+
+		scheduledOps++;
 	}
 }
 
