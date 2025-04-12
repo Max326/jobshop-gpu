@@ -71,6 +71,44 @@ GPUProblem JobShopDataGPU::UploadToGPU(const JobShopData& problem) {
 	return gpuProblem;
 }
 
+void JobShopDataGPU::FreeGPUData(GPUProblem& gpuProblem) {
+	// Helper function to free nested structures
+	auto FreeJob = [](GPUJob& job) {
+		if(job.operations) {
+			std::vector<GPUOperation> tempOps(job.operationCount);
+			cudaMemcpy(tempOps.data(), job.operations,
+					   sizeof(GPUOperation) * job.operationCount, cudaMemcpyDeviceToHost);
+
+			for(auto& op: tempOps) {
+				if(op.eligibleMachines) {
+					cudaFree(op.eligibleMachines);
+				}
+			}
+			cudaFree(job.operations);
+		}
+	};
+
+	// 1. Free jobs and their nested data
+	if(gpuProblem.jobs) {
+		std::vector<GPUJob> tempJobs(gpuProblem.numJobs);
+		cudaMemcpy(tempJobs.data(), gpuProblem.jobs,
+				   sizeof(GPUJob) * gpuProblem.numJobs, cudaMemcpyDeviceToHost);
+
+		for(auto& job: tempJobs) {
+			FreeJob(job);
+		}
+		cudaFree(gpuProblem.jobs);
+	}
+
+	// 2. Free processing times
+	if(gpuProblem.processingTimes) {
+		cudaFree(gpuProblem.processingTimes);
+	}
+
+	// 3. Reset struct
+	gpuProblem = GPUProblem {};
+}
+
 void JobShopDataGPU::DownloadFromGPU(GPUProblem& gpuProblem, JobShopData& cpuProblem) {
 	// 1. Download basic info
 	cpuProblem.numMachines = gpuProblem.numMachines;
@@ -126,40 +164,3 @@ void JobShopDataGPU::DownloadFromGPU(GPUProblem& gpuProblem, JobShopData& cpuPro
 	}
 }
 
-void JobShopDataGPU::FreeGPUData(GPUProblem& gpuProblem) {
-	// Helper function to free nested structures
-	auto FreeJob = [](GPUJob& job) {
-		if(job.operations) {
-			std::vector<GPUOperation> tempOps(job.operationCount);
-			cudaMemcpy(tempOps.data(), job.operations,
-					   sizeof(GPUOperation) * job.operationCount, cudaMemcpyDeviceToHost);
-
-			for(auto& op: tempOps) {
-				if(op.eligibleMachines) {
-					cudaFree(op.eligibleMachines);
-				}
-			}
-			cudaFree(job.operations);
-		}
-	};
-
-	// 1. Free jobs and their nested data
-	if(gpuProblem.jobs) {
-		std::vector<GPUJob> tempJobs(gpuProblem.numJobs);
-		cudaMemcpy(tempJobs.data(), gpuProblem.jobs,
-				   sizeof(GPUJob) * gpuProblem.numJobs, cudaMemcpyDeviceToHost);
-
-		for(auto& job: tempJobs) {
-			FreeJob(job);
-		}
-		cudaFree(gpuProblem.jobs);
-	}
-
-	// 2. Free processing times
-	if(gpuProblem.processingTimes) {
-		cudaFree(gpuProblem.processingTimes);
-	}
-
-	// 3. Reset struct
-	gpuProblem = GPUProblem {};
-}

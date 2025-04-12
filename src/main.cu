@@ -11,7 +11,7 @@ int main() {
 
 	const bool generateRandomJobs = false;
 	const bool generateRandomNNSetup = false;
-	const int numProblems = 5000;	// Start with 1 problem for testing
+	const int numProblems = 10000;
 
 	const std::vector<int> topology = {4, 32, 16, 1};
 
@@ -35,40 +35,46 @@ int main() {
 		}
 
 		// 3. Prepare GPU data and upload to GPU
-		GPUProblem gpuProblems[numProblems];
-		SolutionManager::GPUSolution gpuSolutions[numProblems];
 
-		for(int i = 0; i < numProblems; ++i) {
-			gpuProblems[i] = JobShopDataGPU::UploadToGPU(data);
-			// b) Create GPU solution container
-			gpuSolutions[i] = SolutionManager::CreateGPUSolution(data.numMachines, 100);  // ! 100 ops per machine max -- this needs to be the same in JopShopHeuristic.cuh
-		}
+		auto solutions_batch = SolutionManager::CreateGPUSolutions(numProblems, data.numMachines, 100);
+
+		GPUProblem* d_problems;
+		std::vector<GPUProblem> h_problems(numProblems);
+
+		GPUProblem template_problem = JobShopDataGPU::UploadToGPU(data);  // todo cleanup
+
+		// Copy template to all problems
+		cudaMalloc(&d_problems, sizeof(GPUProblem) * numProblems);
+		std::vector<GPUProblem> temp(numProblems, template_problem);
+		cudaMemcpy(d_problems, temp.data(),
+				   sizeof(GPUProblem) * numProblems,
+				   cudaMemcpyHostToDevice);
 
 		// 4. Create heuristic solver
 		JobShopHeuristic heuristic(std::move(nn));
 
 		// 5. Solve on GPU (even though we're just doing one problem)
-		heuristic.SolveBatch(gpuProblems, gpuSolutions, numProblems);
+		heuristic.SolveBatch(d_problems, &solutions_batch, numProblems);
 
 		cudaError_t kernelErr = cudaGetLastError();
 		if(kernelErr != cudaSuccess) {
 			std::cerr << "Kernel error: " << cudaGetErrorString(kernelErr) << "\n";
 		}
 
-		// 6. Download and display results
-		JobShopHeuristic::CPUSolution solutions[numProblems];
+		// 6. Download results
+		JobShopHeuristic::CPUSolution* solutions = new JobShopHeuristic::CPUSolution[numProblems];
 
 		for(int i = 0; i < numProblems; ++i) {
-			solutions[i].FromGPU(gpuSolutions[i]);
+			solutions[i].FromGPU(solutions_batch, i);
 		}
 
 		heuristic.PrintSchedule(solutions[0], data);
 
 		// 7. Clean up GPU memory
-		for(int i = 0; i < numProblems; ++i) {
-			SolutionManager::FreeGPUSolution(gpuSolutions[i]);
-			JobShopDataGPU::FreeGPUData(gpuProblems[i]);
-		}
+		SolutionManager::FreeGPUSolutions(solutions_batch);
+		cudaFree(d_problems);
+		JobShopDataGPU::FreeGPUData(template_problem);
+		delete[] solutions;
 
 	} catch(const std::exception& e) {
 		std::cerr << "Error: " << e.what() << std::endl;

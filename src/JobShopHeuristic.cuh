@@ -32,15 +32,17 @@ struct OperationSchedule {
 class SolutionManager
 {
 public:
-	struct GPUSolution {
-		OperationSchedule* schedule;  // [machine][operation]
-		int* scheduleCounts;		  // Operations per machine
-		int* makespan;
+	struct GPUSolutions {
+		OperationSchedule* allSchedules;  // [machine][operation]
+		int* allScheduleCounts;		  // Operations per machine
+		int* allMakespans;
+		int numProblems;
 		int numMachines;
+		int maxOps;
 	};
 
-	static GPUSolution CreateGPUSolution(int numMachines, int maxOpsPerMachine);
-	static void FreeGPUSolution(GPUSolution& solution);
+	static GPUSolutions CreateGPUSolutions(int numProblems, int numMachines, int maxOpsPerMachine);
+	static void FreeGPUSolutions(GPUSolutions& solution);
 };
 
 class JobShopHeuristic
@@ -50,8 +52,8 @@ public:
 		std::vector<std::vector<OperationSchedule>> schedule;
 		int makespan = 0;
 
-		void FromGPU(const SolutionManager::GPUSolution& gpuSol);
-		SolutionManager::GPUSolution ToGPU() const;
+		void FromGPU(const SolutionManager::GPUSolutions& gpuSol, int problemId);
+		SolutionManager::GPUSolutions ToGPU() const;
 	};
 
 	CPUSolution Solve(const JobShopData& data);
@@ -71,7 +73,7 @@ public:
 	};
 
 	void SolveBatch(const GPUProblem* problems,
-					SolutionManager::GPUSolution* solutions,
+					SolutionManager::GPUSolutions* solutions,
 					int numProblems);
 
 	void PrintSchedule(const CPUSolution& solution, const JobShopData& data);
@@ -95,7 +97,7 @@ private:
 __global__ void SolveFJSSPKernel(
 	const GPUProblem* problems,
 	const NeuralNetwork::DeviceEvaluator nn_eval,
-	SolutionManager::GPUSolution* solutions,
+	SolutionManager::GPUSolutions* solutions,
 	int total_problems);
 
 #endif	// JOB_SHOP_HEURISTIC_CUH
