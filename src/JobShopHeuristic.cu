@@ -53,6 +53,8 @@ JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
 	solution.makespan = 0;
 	solution.schedule.resize(data.numMachines);
 
+	int scheduledOps = 0;
+
 	// solution.machineEndTimes.resize(data.numMachines, 0);
 
 	JobShopData modifiedData = data;
@@ -116,7 +118,10 @@ JobShopHeuristic::Solution JobShopHeuristic::Solve(const JobShopData& data) {
 		if(bestJobId == -1) break;	// Wszystkie operacje zaplanowane
 
 		// Zaplanuj operację na maszynie
+
+		std::cout << scheduledOps << ": ";
 		UpdateSchedule(modifiedData, bestJobId, bestOperationIdx, bestMachineId, solution);
+		scheduledOps++;
 	}
 
 	return solution;
