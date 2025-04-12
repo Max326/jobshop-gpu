@@ -20,7 +20,7 @@
 
 #define MAX_MACHINES 30	 // TODO: make this dynamic
 #define MAX_JOBS	 30
-#define MAX_OPS		 1000
+#define MAX_OPS		 100
 
 struct OperationSchedule {
 	int jobId;

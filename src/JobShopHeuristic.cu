@@ -62,28 +62,22 @@ void JobShopHeuristic::CPUSolution::FromGPU(const SolutionManager::GPUSolution& 
 			   sizeof(int) * gpuSol.numMachines,
 			   cudaMemcpyDeviceToHost);
 
-	// 3. Download all operation entries (flat layout: [machine * MAX_OPS + op])
+	// 3. Download all operations (flat layout)
 	cudaDeviceSynchronize();  // Ensure all kernel work is done
 	std::vector<OperationSchedule> allOps(gpuSol.numMachines * MAX_OPS);
 	cudaMemcpy(allOps.data(), gpuSol.schedule,
 			   sizeof(OperationSchedule) * allOps.size(),
 			   cudaMemcpyDeviceToHost);
 
-	// 4. Resize schedule structure
+	// 4. Reconstruct 2D schedule
 	schedule.resize(gpuSol.numMachines);
-
-	// 5. Reconstruct the 2D schedule
 	for(int m = 0; m < gpuSol.numMachines; ++m) {
 		schedule[m].clear();
-		for(int i = 0; i < counts[m]; ++i) {
-			schedule[m].push_back(allOps[m * MAX_OPS + i]);
-		}
-	}
-
-	// Optional: validate/compute fallback makespan
-	for(int m = 0; m < gpuSol.numMachines; ++m) {
-		for(const auto& op: schedule[m]) {
-			makespan = std::max(makespan, op.endTime);
+		for(int i = 0; i < counts[m] && i < MAX_OPS; ++i) {
+			int idx = m * MAX_OPS + i;
+			if(idx < allOps.size()) {
+				schedule[m].push_back(allOps[idx]);
+			}
 		}
 	}
 
@@ -140,13 +134,18 @@ void JobShopHeuristic::SolveBatch(
 }
 
 SolutionManager::GPUSolution SolutionManager::CreateGPUSolution(int numMachines, int maxOps) {
-	SolutionManager::GPUSolution sol;
+	GPUSolution sol;
 	sol.numMachines = numMachines;
-	cudaMalloc(&sol.schedule, sizeof(OperationSchedule) * numMachines * maxOps);
+	size_t schedule_size = sizeof(OperationSchedule) * numMachines * maxOps;
+	cudaMalloc(&sol.schedule, schedule_size);
+	cudaMemset(sol.schedule, 0, schedule_size);	 // Initialize to zero
+
 	cudaMalloc(&sol.scheduleCounts, sizeof(int) * numMachines);
-	cudaMalloc(&sol.makespan, sizeof(int));	 // Allocate makespan on device
 	cudaMemset(sol.scheduleCounts, 0, sizeof(int) * numMachines);
-	cudaMemset(sol.makespan, 0, sizeof(int));  // Initialize makespan to 0
+
+	cudaMalloc(&sol.makespan, sizeof(int));
+	int zero = 0;
+	cudaMemcpy(sol.makespan, &zero, sizeof(int), cudaMemcpyHostToDevice);
 	return sol;
 }
 
@@ -157,79 +156,81 @@ void SolutionManager::FreeGPUSolution(SolutionManager::GPUSolution& sol) {
 	sol = GPUSolution {};	 // Reset the struct
 }
 
-// JobShopHeuristic::CPUSolution JobShopHeuristic::Solve(const JobShopData& data) {  //! obsolete
-// 	CPUSolution solution;
-// 	solution.makespan = 0;
-// 	solution.schedule.resize(data.numMachines);
+/*
+JobShopHeuristic::CPUSolution JobShopHeuristic::Solve(const JobShopData& data) {  //! obsolete
+	CPUSolution solution;
+	solution.makespan = 0;
+	solution.schedule.resize(data.numMachines);
 
-// 	// solution.machineEndTimes.resize(data.numMachines, 0);
+	// solution.machineEndTimes.resize(data.numMachines, 0);
 
-// 	JobShopData modifiedData = data;
+	JobShopData modifiedData = data;
 
-// 	while(true) {
-// 		// Znajdź dostępne operacje
-// 		float bestScore = -FLT_MAX;
-// 		int bestJobId = -1, bestOperationIdx = -1, bestMachineId = -1;
+	while(true) {
+		// Znajdź dostępne operacje
+		float bestScore = -FLT_MAX;
+		int bestJobId = -1, bestOperationIdx = -1, bestMachineId = -1;
 
-// 		int bestStartTime = 0;
-// 		int bestProcessingTime = 0;
+		int bestStartTime = 0;
+		int bestProcessingTime = 0;
 
-// 		for(int jobId = 0; jobId < modifiedData.numJobs; ++jobId) {
-// 			auto& job = modifiedData.jobs[jobId];
+		for(int jobId = 0; jobId < modifiedData.numJobs; ++jobId) {
+			auto& job = modifiedData.jobs[jobId];
 
-// 			// Skip if no operations left or next operation isn't ready
-// 			if(job.nextOpIndex >= job.operations.size()) continue;
+			// Skip if no operations left or next operation isn't ready
+			if(job.nextOpIndex >= job.operations.size()) continue;
 
-// 			const auto& operation = job.operations[job.nextOpIndex];
-// 			const int opType = operation.type;
+			const auto& operation = job.operations[job.nextOpIndex];
+			const int opType = operation.type;
 
-// 			for(int machineId: operation.eligibleMachines) {
-// 				if(modifiedData.processingTimes[opType][machineId] == 0) continue;
+			for(int machineId: operation.eligibleMachines) {
+				if(modifiedData.processingTimes[opType][machineId] == 0) continue;
 
-// 				// Get the time at which the machine will become available
-// 				const int machineAvailableTime = solution.schedule[machineId].empty()
-// 													 ? 0
-// 													 : solution.schedule[machineId].back().endTime;
+				// Get the time at which the machine will become available
+				const int machineAvailableTime = solution.schedule[machineId].empty()
+													 ? 0
+													 : solution.schedule[machineId].back().endTime;
 
-// 				const int startTime = std::max(machineAvailableTime, job.lastOpEndTime);
+				const int startTime = std::max(machineAvailableTime, job.lastOpEndTime);
 
-// 				// const int envelope = job.lastOpEndTime - machineAvailableTime;
+				// const int envelope = job.lastOpEndTime - machineAvailableTime;
 
-// 				const int processingTime = data.processingTimes[opType][machineId];
+				const int processingTime = data.processingTimes[opType][machineId];
 
-// 				// TODO: rule 1: check machine availability and save that to "envelope"
-// 				// TODO: rule 2: check for 'holes' in the schedule
+				// TODO: rule 1: check machine availability and save that to "envelope"
+				// TODO: rule 2: check for 'holes' in the schedule
 
-// 				// TODO: implement dynamic NN input size, not from topology
-// 				std::vector<float> features = ExtractFeatures(modifiedData, job, opType, machineId, startTime, machineAvailableTime);
+				// TODO: implement dynamic NN input size, not from topology
+				std::vector<float> features = ExtractFeatures(modifiedData, job, opType, machineId, startTime, machineAvailableTime);
 
-// 				// std::cout << "Features: " << features[0] << ", " << features[1] << ", " << features[2] << std::endl;
+				// std::cout << "Features: " << features[0] << ", " << features[1] << ", " << features[2] << std::endl;
 
-// 				// features.resize(4);
+				// features.resize(4);
 
-// 				std::vector<float> output = neuralNetwork.Forward(features);
+				std::vector<float> output = neuralNetwork.Forward(features);
 
-// 				float score = output[0];
+				float score = output[0];
 
-// 				if(score > bestScore) {
-// 					bestScore = score;
-// 					bestJobId = jobId;
-// 					bestOperationIdx = job.nextOpIndex;
-// 					bestMachineId = machineId;
-// 					bestStartTime = startTime;
-// 					bestProcessingTime = processingTime;
-// 				}
-// 			}
-// 		}
+				if(score > bestScore) {
+					bestScore = score;
+					bestJobId = jobId;
+					bestOperationIdx = job.nextOpIndex;
+					bestMachineId = machineId;
+					bestStartTime = startTime;
+					bestProcessingTime = processingTime;
+				}
+			}
+		}
 
-// 		if(bestJobId == -1) break;	// Wszystkie operacje zaplanowane
+		if(bestJobId == -1) break;	// Wszystkie operacje zaplanowane
 
-// 		// Zaplanuj operację na maszynie
-// 		UpdateSchedule(modifiedData, bestJobId, bestOperationIdx, bestMachineId, solution);
-// 	}
+		// Zaplanuj operację na maszynie
+		UpdateSchedule(modifiedData, bestJobId, bestOperationIdx, bestMachineId, solution);
+	}
 
-// 	return solution;
-// }
+	return solution;
+}
+*/
 
 std::vector<float> JobShopHeuristic::ExtractFeatures(const JobShopData& data,  //! obsolete
 													 const Job& job,
@@ -335,7 +336,7 @@ __global__ void SolveFJSSPKernel(
 	GPUProblem problem = problems[problem_id];
 	SolutionManager::GPUSolution solution = solutions[problem_id];
 
-	// solution.makespan = 0;
+	printf("Solving problem %d\n", problem_id);
 
 	// Validation checks
 	if(problem.numJobs <= 0 || problem.numMachines <= 0) return;
@@ -414,11 +415,12 @@ __global__ void SolveFJSSPKernel(
 
 		// Schedule the operation
 		int op_index = atomicAdd(&solution.scheduleCounts[best_machine], 1);
-		if(op_index < MAX_OPS) {  // Prevent buffer overflow
-			solution.schedule[best_machine * MAX_OPS + op_index] = {
+		if(op_index < MAX_OPS) {
+			int flat_index = best_machine * MAX_OPS + op_index;
+			solution.schedule[flat_index] = {
 				best_job,
 				best_op_data.type,
-				end_time - ptime,
+				best_start_time,
 				end_time};
 		}
 
