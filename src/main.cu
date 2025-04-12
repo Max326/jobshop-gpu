@@ -40,7 +40,7 @@ int main() {
 
 		// b) Create GPU solution container
 		SolutionManager::GPUSolution gpuSolution =
-			SolutionManager::CreateGPUSolution(data.numMachines, 100);	// 100 ops per machine max
+			SolutionManager::CreateGPUSolution(data.numMachines, 100);	// ! 100 ops per machine max -- this needs to be the same in JopShopHeuristic.cuh
 
 		// 4. Create heuristic solver
 		JobShopHeuristic heuristic(std::move(nn));

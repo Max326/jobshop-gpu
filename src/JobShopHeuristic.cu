@@ -391,8 +391,6 @@ __global__ void SolveFJSSPKernel(
 					best_machine = machine;
 					best_start_time = start_time;
 				}
-
-				atomicMax(solution.makespan, start_time + ptime);
 			}
 		}
 
@@ -428,8 +426,10 @@ __global__ void SolveFJSSPKernel(
 		job_last[best_job] = end_time;
 		job_next[best_job]++;
 
-		// printf("Scheduled: Job %d OpType %d on Machine %d (%d-%d), makespan: %d\n",
-		// 	   best_job, best_op_data.type, best_machine,
-		// 	   end_time - ptime, end_time, solution.makespan);
+		atomicMax(solution.makespan, end_time);
+
+		printf("Scheduled: Job %d, OpType %d on Machine %d (%d-%d), makespan: %d\n",
+			   best_job, best_op_data.type, best_machine,
+			   end_time - ptime, end_time, *solution.makespan);
 	}
 }
