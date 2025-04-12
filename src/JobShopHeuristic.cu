@@ -202,7 +202,7 @@ __global__ void SolveFJSSPKernel(
 	int problem_id = blockIdx.x * blockDim.x + threadIdx.x;
 	if(problem_id >= total_problems) return;
 
-	GPUProblem problem = problems[problem_id];
+	const GPUProblem problem = problems[problem_id];
 	SolutionManager::GPUSolution solution = solutions[problem_id];
 
 	printf("Solving problem %d\n", problem_id);
@@ -298,9 +298,9 @@ __global__ void SolveFJSSPKernel(
 
 		atomicMax(solution.makespan, end_time);
 
-		printf("%d: Scheduled: Job %d, OpType %d on Machine %d (%d-%d), makespan: %d\n",
-			   scheduledOps, best_job, best_op_data.type, best_machine,
-			   end_time - ptime, end_time, *solution.makespan);
+		// printf("%d: Scheduled: Job %d, OpType %d on Machine %d (%d-%d), makespan: %d\n",
+		// 	   scheduledOps, best_job, best_op_data.type, best_machine,
+		// 	   end_time - ptime, end_time, *solution.makespan);
 
 		scheduledOps++;
 	}

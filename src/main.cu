@@ -11,7 +11,7 @@ int main() {
 
 	const bool generateRandomJobs = false;
 	const bool generateRandomNNSetup = false;
-	const int numProblems = 1;	// Start with 1 problem for testing
+	const int numProblems = 5000;	// Start with 1 problem for testing
 
 	const std::vector<int> topology = {4, 32, 16, 1};
 
@@ -34,19 +34,21 @@ int main() {
 			nn.LoadFromJson("weights_and_biases");
 		}
 
-		// 3. Prepare GPU data
-		// a) Upload the problem to GPU
-		GPUProblem gpuProblem = JobShopDataGPU::UploadToGPU(data);
+		// 3. Prepare GPU data and upload to GPU
+		GPUProblem gpuProblems[numProblems];
+		SolutionManager::GPUSolution gpuSolutions[numProblems];
 
-		// b) Create GPU solution container
-		SolutionManager::GPUSolution gpuSolution =
-			SolutionManager::CreateGPUSolution(data.numMachines, 100);	// ! 100 ops per machine max -- this needs to be the same in JopShopHeuristic.cuh
+		for(int i = 0; i < numProblems; ++i) {
+			gpuProblems[i] = JobShopDataGPU::UploadToGPU(data);
+			// b) Create GPU solution container
+			gpuSolutions[i] = SolutionManager::CreateGPUSolution(data.numMachines, 100);  // ! 100 ops per machine max -- this needs to be the same in JopShopHeuristic.cuh
+		}
 
 		// 4. Create heuristic solver
 		JobShopHeuristic heuristic(std::move(nn));
 
 		// 5. Solve on GPU (even though we're just doing one problem)
-		heuristic.SolveBatch(&gpuProblem, &gpuSolution, numProblems);
+		heuristic.SolveBatch(gpuProblems, gpuSolutions, numProblems);
 
 		cudaError_t kernelErr = cudaGetLastError();
 		if(kernelErr != cudaSuccess) {
@@ -54,13 +56,19 @@ int main() {
 		}
 
 		// 6. Download and display results
-		JobShopHeuristic::CPUSolution solution;
-		solution.FromGPU(gpuSolution);
-		heuristic.PrintSchedule(solution, data);
+		JobShopHeuristic::CPUSolution solutions[numProblems];
+
+		for(int i = 0; i < numProblems; ++i) {
+			solutions[i].FromGPU(gpuSolutions[i]);
+		}
+
+		heuristic.PrintSchedule(solutions[0], data);
 
 		// 7. Clean up GPU memory
-		SolutionManager::FreeGPUSolution(gpuSolution);
-		JobShopDataGPU::FreeGPUData(gpuProblem);
+		for(int i = 0; i < numProblems; ++i) {
+			SolutionManager::FreeGPUSolution(gpuSolutions[i]);
+			JobShopDataGPU::FreeGPUData(gpuProblems[i]);
+		}
 
 	} catch(const std::exception& e) {
 		std::cerr << "Error: " << e.what() << std::endl;
