@@ -9,7 +9,7 @@
 int main() {
 	srand(time(0));
 
-	const bool generateRandomJobs = false;
+	const bool generateRandomJobs = true;
 	const bool generateRandomNNSetup = false;
 	const int numProblems = 1;
 
