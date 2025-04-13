@@ -1,5 +1,5 @@
-#ifndef JOB_SHOP_DATA_H
-#define JOB_SHOP_DATA_H
+#ifndef JOB_SHOP_DATA_CUH
+#define JOB_SHOP_DATA_CUH
 
 #pragma once
 #include <filesystem>
@@ -36,6 +36,7 @@ public:
 	int numOpTypes;	 // number of operation types
 	std::vector<Job> jobs;
 	std::vector<std::vector<int>> processingTimes;	// processing times for each operation type on each machine
+	std::vector<std::unordered_set<int>> machineEligibleOperations; // eligible operations for each machine
 
 	// TODO: implement
 	bool operInJobMultiplication = false;
@@ -247,4 +248,4 @@ public:
 	// Free GPU memory
 	void DownloadFromGPU(GPUProblem& gpuProblem, JobShopData& cpuProblem);
 };
-#endif	// JOB_SHOP_DATA_H
+#endif	// JOB_SHOP_DATA_CUH

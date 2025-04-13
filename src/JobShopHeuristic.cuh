@@ -34,7 +34,7 @@ class SolutionManager
 public:
 	struct GPUSolutions {
 		OperationSchedule* allSchedules;  // [machine][operation]
-		int* allScheduleCounts;		  // Operations per machine
+		int* allScheduleCounts;			  // Operations per machine
 		int* allMakespans;
 		int numProblems;
 		int numMachines;
@@ -76,7 +76,7 @@ public:
 					SolutionManager::GPUSolutions* solutions,
 					int numProblems);
 
-	void PrintSchedule(const CPUSolution& solution, const JobShopData& data);
+	void PrintSchedule(const CPUSolution& solution, JobShopData data);
 
 public:
 	NeuralNetwork neuralNetwork;
@@ -99,5 +99,7 @@ __global__ void SolveFJSSPKernel(
 	const NeuralNetwork::DeviceEvaluator nn_eval,
 	SolutionManager::GPUSolutions* solutions,
 	int total_problems);
+
+__device__ void PrintProblemDetails(const GPUProblem& problem);
 
 #endif	// JOB_SHOP_HEURISTIC_CUH

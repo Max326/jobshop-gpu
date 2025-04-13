@@ -162,12 +162,36 @@ void SolutionManager::FreeGPUSolutions(SolutionManager::GPUSolutions& sols) {
 	sols = GPUSolutions {};		  // Reset the struct
 }
 
-void JobShopHeuristic::PrintSchedule(const CPUSolution& solution, const JobShopData& data) {
+void JobShopHeuristic::PrintSchedule(const CPUSolution& solution, JobShopData data) {
+	// First build machine->operations map if not already available
+	if(data.machineEligibleOperations.empty()) {
+		// Initialize with empty sets
+		data.machineEligibleOperations.resize(data.numMachines);
+
+		// Scan all jobs to build the map
+		for(const auto& job: data.jobs) {
+			for(const auto& op: job.operations) {
+				for(int machineId: op.eligibleMachines) {
+					data.machineEligibleOperations[machineId].insert(op.type);
+				}
+			}
+		}
+	}
+
 	std::cout << "\n=== FINAL SCHEDULE ===" << std::endl;
 
 	for(int machineId = 0; machineId < solution.schedule.size(); ++machineId) {
-		std::cout << "M" << machineId << ": [";
+		// Print machine ID and eligible operations
+		std::cout << "M" << machineId << " (";
+		bool firstOp = true;
+		for(int opType: data.machineEligibleOperations[machineId]) {
+			if(!firstOp) std::cout << ", ";
+			std::cout << opType;
+			firstOp = false;
+		}
+		std::cout << "): [";
 
+		// Print schedule
 		int currentTime = 0;
 		bool firstElement = true;
 		const auto& machineSchedule = solution.schedule[machineId];
@@ -186,16 +210,15 @@ void JobShopHeuristic::PrintSchedule(const CPUSolution& solution, const JobShopD
 
 				// Add operation with job ID
 				if(!firstElement) std::cout << "][";
-				std::cout << "t=" << scheduledOp.startTime << ",j" << scheduledOp.jobId << "-o" << scheduledOp.opType
+				std::cout << "t=" << scheduledOp.startTime << ",j" << scheduledOp.jobId
+						  << "-o" << scheduledOp.opType
 						  << "-" << (scheduledOp.endTime - scheduledOp.startTime);
 				currentTime = scheduledOp.endTime;
 				firstElement = false;
 			}
 		}
-
 		std::cout << "]" << std::endl;
 	}
-
 	std::cout << "Makespan: " << solution.makespan << std::endl;
 }
 
@@ -214,7 +237,13 @@ __global__ void SolveFJSSPKernel(
 	if(problem_id >= total_problems) return;
 
 	const GPUProblem problem = problems[problem_id];
-	SolutionManager::GPUSolutions solution = solutions[problem_id];
+
+	// debug
+	if(problem_id == 0) {  // Only print first problem to avoid clutter
+		PrintProblemDetails(problem);
+	}
+
+	// SolutionManager::GPUSolutions solution = solutions[problem_id];
 
 	int* my_counts = solutions->allScheduleCounts +
 					 problem_id * solutions->numMachines;
@@ -323,6 +352,40 @@ __global__ void SolveFJSSPKernel(
 
 		scheduledOps++;
 	}
+}
+
+__device__ void PrintProblemDetails(const GPUProblem& problem) {
+	printf("\n=== Problem %d Details ===\n", blockIdx.x * blockDim.x + threadIdx.x);
+	printf("Machines: %d, Jobs: %d, Operation Types: %d\n",
+		   problem.numMachines, problem.numJobs, problem.numOpTypes);
+
+	// // Print processing times matrix
+	// printf("\nProcessing Times:\n");
+	// for(int o = 0; o < problem.numOpTypes; o++) {
+	// 	for(int m = 0; m < problem.numMachines; m++) {
+	// 		int idx = o * problem.numMachines + m;
+	// 		printf("%3d ", problem.processingTimes[idx]);
+	// 	}
+	// 	printf("\n");
+	// }
+
+	// Print jobs and their operations
+	printf("\nJobs:\n");
+	for(int j = 0; j < problem.numJobs; j++) {
+		GPUJob job = problem.jobs[j];
+		printf("Job %d (%d ops):\n", job.id, job.operationCount);
+
+		for(int o = 0; o < job.operationCount; o++) {
+			GPUOperation op = job.operations[o];
+			printf("  Op type %d on machines: ", op.type);
+
+			for(int m = 0; m < op.eligibleCount; m++) {
+				printf("%d ", op.eligibleMachines[m]);
+			}
+			printf("\n");
+		}
+	}
+	printf("========================\n\n");
 }
 
 /*
