@@ -6,13 +6,11 @@
 #include "JobShopData.cuh"
 #include "JobShopHeuristic.cuh"
 
-// TODO: implement more features, according to Flexible Job Shop document
+// TODO: implement more features, according to the Flexible Job Shop document
 // 		- wasted time
 // 		- total number of operations left
 // 		- one hot encodings
 // TODO: test scheduling correctness
-// TODO: print jobs before scheduling
-// TODO: print machines with eligible operations
 // TODO: parallel operations (graphs)
 
 int main() {
