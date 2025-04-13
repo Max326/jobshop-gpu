@@ -52,56 +52,56 @@ NeuralNetwork JobShopHeuristic::InitializeNetworkFromFile(const std::string& fil
 	}
 }
 
-void JobShopHeuristic::CPUSolution::FromGPU(const SolutionManager::GPUSolution& gpuSol) {
-	// 1. Download makespan
-	cudaMemcpy(&makespan, gpuSol.makespan, sizeof(int), cudaMemcpyDeviceToHost);
+void JobShopHeuristic::CPUSolution::FromGPU(const SolutionManager::GPUSolutions& gpuSols, int problemId) {
+	// Calculate offsets
+	int counts_offset = problemId * gpuSols.numMachines;
+	int schedule_offset = problemId * gpuSols.numMachines * gpuSols.maxOps;
 
-	// 2. Download operation counts per machine
-	std::vector<int> counts(gpuSol.numMachines);
-	cudaMemcpy(counts.data(), gpuSol.scheduleCounts,
-			   sizeof(int) * gpuSol.numMachines,
-			   cudaMemcpyDeviceToHost);
+	// Download counts
+	std::vector<int> counts(gpuSols.numMachines);
+	cudaMemcpy(counts.data(), gpuSols.allScheduleCounts + counts_offset,
+			   sizeof(int) * gpuSols.numMachines, cudaMemcpyDeviceToHost);
 
-	// 3. Download all operations (flat layout)
-	cudaDeviceSynchronize();  // Ensure all kernel work is done
-	std::vector<OperationSchedule> allOps(gpuSol.numMachines * MAX_OPS);
-	cudaMemcpy(allOps.data(), gpuSol.schedule,
-			   sizeof(OperationSchedule) * allOps.size(),
-			   cudaMemcpyDeviceToHost);
+	// Download makespan
+	cudaMemcpy(&makespan, gpuSols.allMakespans + problemId,
+			   sizeof(int), cudaMemcpyDeviceToHost);
+
+	// Download schedule
+	std::vector<OperationSchedule> allOps(gpuSols.numMachines * gpuSols.maxOps);
+	cudaMemcpy(allOps.data(), gpuSols.allSchedules + schedule_offset,
+			   sizeof(OperationSchedule) * allOps.size(), cudaMemcpyDeviceToHost);
 
 	// 4. Reconstruct 2D schedule
-	schedule.resize(gpuSol.numMachines);
-	for(int m = 0; m < gpuSol.numMachines; ++m) {
+	schedule.resize(gpuSols.numMachines);
+	for(int m = 0; m < gpuSols.numMachines; ++m) {
 		schedule[m].clear();
-		for(int i = 0; i < counts[m] && i < MAX_OPS; ++i) {
-			int idx = m * MAX_OPS + i;
-			if(idx < allOps.size()) {
-				schedule[m].push_back(allOps[idx]);
-			}
+		for(int i = 0; i < counts[m] && i < gpuSols.maxOps; ++i) {
+			int idx = m * gpuSols.maxOps + i;
+			schedule[m].push_back(allOps[idx]);
 		}
 	}
 
 	// Debug print
 	int total_ops = 0;
-	for(int m = 0; m < gpuSol.numMachines; ++m) {
+	for(int m = 0; m < gpuSols.numMachines; ++m) {
 		total_ops += counts[m];
 	}
-	std::cout << "Downloaded schedule with " << gpuSol.numMachines
-			  << " machines, total ops: " << total_ops
-			  << ", makespan: " << makespan << "\n";
+	// std::cout << "Downloaded schedule with " << gpuSols.numMachines
+	// 		  << " machines, total ops: " << total_ops
+	// 		  << ", makespan: " << makespan << "\n";
 }
 
-SolutionManager::GPUSolution JobShopHeuristic::CPUSolution::ToGPU() const {
-	SolutionManager::GPUSolution gpuSol;
+SolutionManager::GPUSolutions JobShopHeuristic::CPUSolution::ToGPU() const {
+	SolutionManager::GPUSolutions gpuSol;
 	gpuSol.numMachines = schedule.size();
 
 	// Allocate device memory
-	cudaMalloc(&gpuSol.schedule, sizeof(OperationSchedule) * schedule.size() * MAX_OPS);
-	cudaMalloc(&gpuSol.scheduleCounts, sizeof(int) * schedule.size());
-	cudaMalloc(&gpuSol.makespan, sizeof(int));
+	cudaMalloc(&gpuSol.allSchedules, sizeof(OperationSchedule) * schedule.size() * MAX_OPS);
+	cudaMalloc(&gpuSol.allScheduleCounts, sizeof(int) * schedule.size());
+	cudaMalloc(&gpuSol.allMakespans, sizeof(int));
 
 	// Copy makespan
-	cudaMemcpy(gpuSol.makespan, &makespan, sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(gpuSol.allMakespans, &makespan, sizeof(int), cudaMemcpyHostToDevice);
 
 	// Flatten and copy schedule
 	std::vector<OperationSchedule> flat_schedule;
@@ -111,10 +111,10 @@ SolutionManager::GPUSolution JobShopHeuristic::CPUSolution::ToGPU() const {
 		counts.push_back(machine.size());
 	}
 
-	cudaMemcpy(gpuSol.schedule, flat_schedule.data(),
+	cudaMemcpy(gpuSol.allSchedules, flat_schedule.data(),
 			   sizeof(OperationSchedule) * flat_schedule.size(),
 			   cudaMemcpyHostToDevice);
-	cudaMemcpy(gpuSol.scheduleCounts, counts.data(),
+	cudaMemcpy(gpuSol.allScheduleCounts, counts.data(),
 			   sizeof(int) * counts.size(),
 			   cudaMemcpyHostToDevice);
 
@@ -123,7 +123,7 @@ SolutionManager::GPUSolution JobShopHeuristic::CPUSolution::ToGPU() const {
 
 void JobShopHeuristic::SolveBatch(
 	const GPUProblem* problems,
-	SolutionManager::GPUSolution* solutions,
+	SolutionManager::GPUSolutions* solutions,
 	int numProblems) {
 	auto eval = neuralNetwork.GetDeviceEvaluator();
 	int threads = 256;
@@ -133,27 +133,33 @@ void JobShopHeuristic::SolveBatch(
 	cudaDeviceSynchronize();
 }
 
-SolutionManager::GPUSolution SolutionManager::CreateGPUSolution(int numMachines, int maxOps) {
-	GPUSolution sol;
-	sol.numMachines = numMachines;
-	size_t schedule_size = sizeof(OperationSchedule) * numMachines * maxOps;
-	cudaMalloc(&sol.schedule, schedule_size);
-	cudaMemset(sol.schedule, 0, schedule_size);	 // Initialize to zero
+SolutionManager::GPUSolutions SolutionManager::CreateGPUSolutions(int numProblems, int numMachines, int maxOps) {
+	GPUSolutions solutions;
+	solutions.numProblems = numProblems;
+	solutions.numMachines = numMachines;
+	solutions.maxOps = maxOps;
 
-	cudaMalloc(&sol.scheduleCounts, sizeof(int) * numMachines);
-	cudaMemset(sol.scheduleCounts, 0, sizeof(int) * numMachines);
+	size_t schedule_size = sizeof(OperationSchedule) * numMachines * maxOps * numProblems;
+	cudaMalloc(&solutions.allSchedules, schedule_size);
+	cudaMemset(solutions.allSchedules, 0, schedule_size);  // Initialize to zero
 
-	cudaMalloc(&sol.makespan, sizeof(int));
-	int zero = 0;
-	cudaMemcpy(sol.makespan, &zero, sizeof(int), cudaMemcpyHostToDevice);
-	return sol;
+	size_t counts_size = numProblems * numMachines * sizeof(int);
+	cudaMalloc(&solutions.allScheduleCounts, counts_size);
+	cudaMemset(solutions.allScheduleCounts, 0, counts_size);  // Initialize to zero
+
+	cudaMalloc(&solutions.allMakespans, sizeof(int) * numProblems);
+	// int zero = 0;
+	// cudaMemcpy(solutions.allMakespans, &zero, sizeof(int) * numProblems, cudaMemcpyHostToDevice);
+	cudaMemset(solutions.allMakespans, 0, numProblems * sizeof(int));
+
+	return solutions;
 }
 
-void SolutionManager::FreeGPUSolution(SolutionManager::GPUSolution& sol) {
-	cudaFree(sol.schedule);
-	cudaFree(sol.scheduleCounts);
-	cudaFree(sol.makespan);	 // Free makespan memory
-	sol = GPUSolution {};	 // Reset the struct
+void SolutionManager::FreeGPUSolutions(SolutionManager::GPUSolutions& sols) {
+	cudaFree(sols.allSchedules);
+	cudaFree(sols.allScheduleCounts);
+	cudaFree(sols.allMakespans);  // Free makespan memory
+	sols = GPUSolutions {};		  // Reset the struct
 }
 
 void JobShopHeuristic::PrintSchedule(const CPUSolution& solution, const JobShopData& data) {
@@ -190,22 +196,35 @@ void JobShopHeuristic::PrintSchedule(const CPUSolution& solution, const JobShopD
 		std::cout << "]" << std::endl;
 	}
 
-	std::cout << "Makespan: " << solution.makespan << "\n"
-			  << std::endl;
+	std::cout << "Makespan: " << solution.makespan << std::endl;
 }
 
 __global__ void SolveFJSSPKernel(
 	const GPUProblem* problems,
 	const NeuralNetwork::DeviceEvaluator nn_eval,
-	SolutionManager::GPUSolution* solutions,
+	SolutionManager::GPUSolutions* solutions,
 	int total_problems) {
+	int tid = blockIdx.x * blockDim.x + threadIdx.x;
+	if(tid == 0) {
+		printf("Launched %d blocks, %d threads (total threads = %d)\n",
+			   gridDim.x, blockDim.x, gridDim.x * blockDim.x);
+	}
+
 	int problem_id = blockIdx.x * blockDim.x + threadIdx.x;
 	if(problem_id >= total_problems) return;
 
 	const GPUProblem problem = problems[problem_id];
-	SolutionManager::GPUSolution solution = solutions[problem_id];
+	SolutionManager::GPUSolutions solution = solutions[problem_id];
 
-	printf("Solving problem %d\n", problem_id);
+	int* my_counts = solutions->allScheduleCounts +
+					 problem_id * solutions->numMachines;
+
+	OperationSchedule* my_schedule = solutions->allSchedules +
+									 problem_id * solutions->numMachines * solutions->maxOps;
+
+	int* my_makespan = solutions->allMakespans + problem_id;
+
+	// printf("Solving problem %d\n", problem_id);
 	int scheduledOps = 0;
 
 	// Validation checks
@@ -282,10 +301,10 @@ __global__ void SolveFJSSPKernel(
 		int end_time = best_start_time + ptime;
 
 		// Schedule the operation
-		int op_index = atomicAdd(&solution.scheduleCounts[best_machine], 1);
-		if(op_index < MAX_OPS) {
-			int flat_index = best_machine * MAX_OPS + op_index;
-			solution.schedule[flat_index] = {
+		int op_index = atomicAdd(&my_counts[best_machine], 1);
+		if(op_index < solutions->maxOps) {
+			int flat_index = best_machine * solutions->maxOps + op_index;
+			my_schedule[flat_index] = {
 				best_job,
 				best_op_data.type,
 				best_start_time,
@@ -296,7 +315,7 @@ __global__ void SolveFJSSPKernel(
 		job_last[best_job] = end_time;
 		job_next[best_job]++;
 
-		atomicMax(solution.makespan, end_time);
+		atomicMax(my_makespan, end_time);
 
 		// printf("%d: Scheduled: Job %d, OpType %d on Machine %d (%d-%d), makespan: %d\n",
 		// 	   scheduledOps, best_job, best_op_data.type, best_machine,

@@ -71,61 +71,6 @@ GPUProblem JobShopDataGPU::UploadToGPU(const JobShopData& problem) {
 	return gpuProblem;
 }
 
-void JobShopDataGPU::DownloadFromGPU(GPUProblem& gpuProblem, JobShopData& cpuProblem) {
-	// 1. Download basic info
-	cpuProblem.numMachines = gpuProblem.numMachines;
-	cpuProblem.numJobs = gpuProblem.numJobs;
-	cpuProblem.numOpTypes = gpuProblem.numOpTypes;
-
-	// 2. Download jobs
-	std::vector<GPUJob> tempJobs(gpuProblem.numJobs);
-	cudaMemcpy(tempJobs.data(), gpuProblem.jobs,
-			   sizeof(GPUJob) * gpuProblem.numJobs, cudaMemcpyDeviceToHost);
-
-	cpuProblem.jobs.resize(gpuProblem.numJobs);
-	for(int j = 0; j < gpuProblem.numJobs; j++) {
-		GPUJob& gpuJob = tempJobs[j];
-		Job& cpuJob = cpuProblem.jobs[j];
-
-		cpuJob.id = gpuJob.id;
-		cpuJob.nextOpIndex = gpuJob.nextOpIndex;
-		cpuJob.lastOpEndTime = gpuJob.lastOpEndTime;
-
-		// Download operations
-		std::vector<GPUOperation> tempOps(gpuJob.operationCount);
-		cudaMemcpy(tempOps.data(), gpuJob.operations,
-				   sizeof(GPUOperation) * gpuJob.operationCount, cudaMemcpyDeviceToHost);
-
-		cpuJob.operations.resize(gpuJob.operationCount);
-		for(int o = 0; o < gpuJob.operationCount; o++) {
-			GPUOperation& gpuOp = tempOps[o];
-			Operation& cpuOp = cpuJob.operations[o];
-
-			cpuOp.type = gpuOp.type;
-
-			// Download eligible machines
-			std::vector<int> tempMachines(gpuOp.eligibleCount);
-			cudaMemcpy(tempMachines.data(), gpuOp.eligibleMachines,
-					   sizeof(int) * gpuOp.eligibleCount, cudaMemcpyDeviceToHost);
-			cpuOp.eligibleMachines = tempMachines;
-		}
-	}
-
-	// 3. Download processing times
-	std::vector<int> flatTimes(gpuProblem.numOpTypes * gpuProblem.numMachines);
-	cudaMemcpy(flatTimes.data(), gpuProblem.processingTimes,
-			   sizeof(int) * flatTimes.size(), cudaMemcpyDeviceToHost);
-
-	cpuProblem.processingTimes.resize(gpuProblem.numOpTypes);
-	for(int o = 0; o < gpuProblem.numOpTypes; o++) {
-		cpuProblem.processingTimes[o].resize(gpuProblem.numMachines);
-		for(int m = 0; m < gpuProblem.numMachines; m++) {
-			cpuProblem.processingTimes[o][m] =
-				flatTimes[o * gpuProblem.numMachines + m];
-		}
-	}
-}
-
 void JobShopDataGPU::FreeGPUData(GPUProblem& gpuProblem) {
 	// Helper function to free nested structures
 	auto FreeJob = [](GPUJob& job) {
