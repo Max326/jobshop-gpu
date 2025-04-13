@@ -196,8 +196,7 @@ void JobShopHeuristic::PrintSchedule(const CPUSolution& solution, const JobShopD
 		std::cout << "]" << std::endl;
 	}
 
-	std::cout << "Makespan: " << solution.makespan << "\n"
-			  << std::endl;
+	std::cout << "Makespan: " << solution.makespan << std::endl;
 }
 
 __global__ void SolveFJSSPKernel(

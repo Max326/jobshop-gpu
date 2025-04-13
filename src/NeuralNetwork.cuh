@@ -153,8 +153,8 @@ private:
 		std::cout << "Topology: ";
 		for(auto t: topology)
 			std::cout << t << " ";
-		std::cout << "\nFirst weight layer: " << weights[0][0] << ", " << weights[0][1] << "...\n";
-		std::cout << "First bias: " << biases[0][0] << "\n";
+		// std::cout << "\nFirst weight layer: " << weights[0][0] << ", " << weights[0][1] << "...\n";
+		// std::cout << "First bias: " << biases[0][0] << "\n";
 	};
 };
 
