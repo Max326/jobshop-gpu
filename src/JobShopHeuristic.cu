@@ -317,9 +317,9 @@ __global__ void SolveFJSSPKernel(
 
 		atomicMax(my_makespan, end_time);
 
-		// printf("%d: Scheduled: Job %d, OpType %d on Machine %d (%d-%d), makespan: %d\n",
-		// 	   scheduledOps, best_job, best_op_data.type, best_machine,
-		// 	   end_time - ptime, end_time, *solution.makespan);
+		printf("%d: Scheduled: Job %d, OpType %d on Machine %d (%d-%d), makespan: %d\n",
+			   scheduledOps, best_job, best_op_data.type, best_machine,
+			   end_time - ptime, end_time, *my_makespan);
 
 		scheduledOps++;
 	}
