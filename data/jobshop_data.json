@@ -7,37 +7,72 @@
             "operations": [
                 {
                     "eligibleMachines": [
+                        5,
+                        7,
+                        9
+                    ],
+                    "type": 4
+                },
+                {
+                    "eligibleMachines": [
+                        3
+                    ],
+                    "type": 9
+                },
+                {
+                    "eligibleMachines": [
                         0,
-                        6,
+                        1,
+                        4
+                    ],
+                    "type": 2
+                },
+                {
+                    "eligibleMachines": [
+                        2,
+                        3,
+                        8
+                    ],
+                    "type": 6
+                },
+                {
+                    "eligibleMachines": [
+                        3,
+                        6
+                    ],
+                    "type": 5
+                },
+                {
+                    "eligibleMachines": [
+                        2,
+                        5,
                         9
                     ],
                     "type": 0
                 },
                 {
                     "eligibleMachines": [
-                        1
+                        9
                     ],
                     "type": 1
                 },
                 {
                     "eligibleMachines": [
-                        0,
-                        3,
                         7
                     ],
-                    "type": 9
+                    "type": 3
                 },
                 {
                     "eligibleMachines": [
-                        2,
-                        6,
+                        4,
+                        5,
                         9
                     ],
-                    "type": 5
+                    "type": 8
                 },
                 {
                     "eligibleMachines": [
-                        1
+                        8
                     ],
                     "type": 7
                 }
@@ -50,36 +85,52 @@
             "operations": [
                 {
                     "eligibleMachines": [
+                        7
+                    ],
+                    "type": 3
+                },
+                {
+                    "eligibleMachines": [
                         5,
-                        8
+                        7,
+                        9
                     ],
                     "type": 4
                 },
                 {
                     "eligibleMachines": [
-                        0,
-                        6,
+                        9
+                    ],
+                    "type": 1
+                },
+                {
+                    "eligibleMachines": [
+                        2,
+                        5,
                         9
                     ],
                     "type": 0
                 },
                 {
                     "eligibleMachines": [
-                        3
-                    ],
-                    "type": 8
-                },
-                {
-                    "eligibleMachines": [
-                        0
-                    ],
-                    "type": 2
-                },
-                {
-                    "eligibleMachines": [
-                        1
+                        8
                     ],
                     "type": 7
+                },
+                {
+                    "eligibleMachines": [
+                        3,
+                        6
+                    ],
+                    "type": 5
+                },
+                {
+                    "eligibleMachines": [
+                        2,
+                        3,
+                        8
+                    ],
+                    "type": 6
                 }
             ]
         },
@@ -90,56 +141,37 @@
             "operations": [
                 {
                     "eligibleMachines": [
-                        2,
-                        6,
-                        9
-                    ],
-                    "type": 5
-                },
-                {
-                    "eligibleMachines": [
-                        6
-                    ],
-                    "type": 6
-                },
-                {
-                    "eligibleMachines": [
-                        1
-                    ],
-                    "type": 1
-                },
-                {
-                    "eligibleMachines": [
-                        0,
-                        3,
                         7
-                    ],
-                    "type": 9
-                },
-                {
-                    "eligibleMachines": [
-                        1
-                    ],
-                    "type": 7
-                },
-                {
-                    "eligibleMachines": [
-                        0
-                    ],
-                    "type": 2
-                },
-                {
-                    "eligibleMachines": [
-                        3
                     ],
                     "type": 3
                 },
                 {
                     "eligibleMachines": [
-                        5,
-                        8
+                        9
                     ],
-                    "type": 4
+                    "type": 1
+                },
+                {
+                    "eligibleMachines": [
+                        4,
+                        5,
+                        9
+                    ],
+                    "type": 8
+                },
+                {
+                    "eligibleMachines": [
+                        3
+                    ],
+                    "type": 9
+                },
+                {
+                    "eligibleMachines": [
+                        2,
+                        5,
+                        9
+                    ],
+                    "type": 0
                 }
             ]
         },
@@ -150,70 +182,52 @@
             "operations": [
                 {
                     "eligibleMachines": [
-                        5,
-                        8
-                    ],
-                    "type": 4
-                },
-                {
-                    "eligibleMachines": [
-                        0,
                         3,
-                        7
-                    ],
-                    "type": 9
-                },
-                {
-                    "eligibleMachines": [
-                        2,
-                        6,
-                        9
+                        6
                     ],
                     "type": 5
                 },
                 {
                     "eligibleMachines": [
                         0,
-                        6,
-                        9
-                    ],
-                    "type": 0
-                },
-                {
-                    "eligibleMachines": [
-                        3
-                    ],
-                    "type": 3
-                },
-                {
-                    "eligibleMachines": [
-                        6
-                    ],
-                    "type": 6
-                },
-                {
-                    "eligibleMachines": [
-                        0
+                        1,
+                        4
                     ],
                     "type": 2
                 },
                 {
                     "eligibleMachines": [
-                        1
+                        5,
+                        7,
+                        9
+                    ],
+                    "type": 4
+                },
+                {
+                    "eligibleMachines": [
+                        7
+                    ],
+                    "type": 3
+                },
+                {
+                    "eligibleMachines": [
+                        9
                     ],
                     "type": 1
                 },
                 {
                     "eligibleMachines": [
-                        1
+                        3
                     ],
-                    "type": 7
+                    "type": 9
                 },
                 {
                     "eligibleMachines": [
-                        3
+                        2,
+                        3,
+                        8
                     ],
-                    "type": 8
+                    "type": 6
                 }
             ]
         },
@@ -224,63 +238,55 @@
             "operations": [
                 {
                     "eligibleMachines": [
-                        0,
+                        2,
                         3,
-                        7
+                        8
                     ],
-                    "type": 9
+                    "type": 6
                 },
                 {
                     "eligibleMachines": [
                         0,
-                        6,
+                        1,
+                        4
+                    ],
+                    "type": 2
+                },
+                {
+                    "eligibleMachines": [
+                        2,
+                        5,
                         9
                     ],
                     "type": 0
                 },
                 {
                     "eligibleMachines": [
-                        0
-                    ],
-                    "type": 2
-                },
-                {
-                    "eligibleMachines": [
-                        1
-                    ],
-                    "type": 1
-                },
-                {
-                    "eligibleMachines": [
-                        1
+                        8
                     ],
                     "type": 7
                 },
                 {
                     "eligibleMachines": [
-                        6
-                    ],
-                    "type": 6
-                },
-                {
-                    "eligibleMachines": [
-                        3
-                    ],
-                    "type": 8
-                },
-                {
-                    "eligibleMachines": [
-                        2,
-                        6,
+                        5,
+                        7,
                         9
                     ],
-                    "type": 5
+                    "type": 4
                 },
                 {
                     "eligibleMachines": [
                         3
                     ],
-                    "type": 3
+                    "type": 9
+                },
+                {
+                    "eligibleMachines": [
+                        4,
+                        5,
+                        9
+                    ],
+                    "type": 8
                 }
             ]
         },
@@ -291,50 +297,40 @@
             "operations": [
                 {
                     "eligibleMachines": [
-                        1
-                    ],
-                    "type": 7
-                },
-                {
-                    "eligibleMachines": [
                         2,
-                        6,
-                        9
-                    ],
-                    "type": 5
-                },
-                {
-                    "eligibleMachines": [
-                        6
+                        3,
+                        8
                     ],
                     "type": 6
                 },
                 {
                     "eligibleMachines": [
-                        1
+                        4,
+                        5,
+                        9
                     ],
-                    "type": 1
+                    "type": 8
                 },
                 {
                     "eligibleMachines": [
-                        0
+                        8
                     ],
-                    "type": 2
+                    "type": 7
                 },
                 {
                     "eligibleMachines": [
                         5,
-                        8
+                        7,
+                        9
                     ],
                     "type": 4
                 },
                 {
                     "eligibleMachines": [
-                        0,
-                        6,
-                        9
+                        3,
+                        6
                     ],
-                    "type": 0
+                    "type": 5
                 }
             ]
         },
@@ -345,25 +341,21 @@
             "operations": [
                 {
                     "eligibleMachines": [
-                        6
+                        4,
+                        5,
+                        9
                     ],
-                    "type": 6
+                    "type": 8
                 },
                 {
                     "eligibleMachines": [
-                        1
+                        9
                     ],
                     "type": 1
                 },
                 {
                     "eligibleMachines": [
-                        1
-                    ],
-                    "type": 7
-                },
-                {
-                    "eligibleMachines": [
-                        3
+                        7
                     ],
                     "type": 3
                 },
@@ -371,15 +363,44 @@
                     "eligibleMachines": [
                         3
                     ],
-                    "type": 8
+                    "type": 9
                 },
                 {
                     "eligibleMachines": [
                         0,
-                        3,
-                        7
+                        1,
+                        4
                     ],
-                    "type": 9
+                    "type": 2
+                },
+                {
+                    "eligibleMachines": [
+                        5,
+                        7,
+                        9
+                    ],
+                    "type": 4
+                },
+                {
+                    "eligibleMachines": [
+                        3,
+                        6
+                    ],
+                    "type": 5
+                },
+                {
+                    "eligibleMachines": [
+                        8
+                    ],
+                    "type": 7
+                },
+                {
+                    "eligibleMachines": [
+                        2,
+                        5,
+                        9
+                    ],
+                    "type": 0
                 }
             ]
         },
@@ -390,43 +411,38 @@
             "operations": [
                 {
                     "eligibleMachines": [
+                        4,
+                        5,
+                        9
+                    ],
+                    "type": 8
+                },
+                {
+                    "eligibleMachines": [
                         2,
-                        6,
-                        9
-                    ],
-                    "type": 5
-                },
-                {
-                    "eligibleMachines": [
-                        0,
-                        6,
-                        9
-                    ],
-                    "type": 0
-                },
-                {
-                    "eligibleMachines": [
-                        3
-                    ],
-                    "type": 3
-                },
-                {
-                    "eligibleMachines": [
-                        1
-                    ],
-                    "type": 7
-                },
-                {
-                    "eligibleMachines": [
-                        6
+                        3,
+                        8
                     ],
                     "type": 6
                 },
                 {
                     "eligibleMachines": [
+                        3,
+                        6
+                    ],
+                    "type": 5
+                },
+                {
+                    "eligibleMachines": [
                         3
                     ],
-                    "type": 8
+                    "type": 9
+                },
+                {
+                    "eligibleMachines": [
+                        9
+                    ],
+                    "type": 1
                 }
             ]
         },
@@ -437,36 +453,44 @@
             "operations": [
                 {
                     "eligibleMachines": [
-                        0,
-                        3,
-                        7
+                        2,
+                        5,
+                        9
+                    ],
+                    "type": 0
+                },
+                {
+                    "eligibleMachines": [
+                        3
                     ],
                     "type": 9
                 },
                 {
                     "eligibleMachines": [
-                        3
+                        9
+                    ],
+                    "type": 1
+                },
+                {
+                    "eligibleMachines": [
+                        3,
+                        6
+                    ],
+                    "type": 5
+                },
+                {
+                    "eligibleMachines": [
+                        7
                     ],
                     "type": 3
                 },
                 {
                     "eligibleMachines": [
                         5,
-                        8
+                        7,
+                        9
                     ],
                     "type": 4
-                },
-                {
-                    "eligibleMachines": [
-                        0
-                    ],
-                    "type": 2
-                },
-                {
-                    "eligibleMachines": [
-                        3
-                    ],
-                    "type": 8
                 }
             ]
         },
@@ -477,36 +501,52 @@
             "operations": [
                 {
                     "eligibleMachines": [
-                        6
+                        2,
+                        3,
+                        8
                     ],
                     "type": 6
                 },
                 {
                     "eligibleMachines": [
-                        1
+                        2,
+                        5,
+                        9
+                    ],
+                    "type": 0
+                },
+                {
+                    "eligibleMachines": [
+                        9
                     ],
                     "type": 1
                 },
                 {
                     "eligibleMachines": [
                         0,
-                        3,
+                        1,
+                        4
+                    ],
+                    "type": 2
+                },
+                {
+                    "eligibleMachines": [
                         7
                     ],
-                    "type": 9
+                    "type": 3
                 },
                 {
                     "eligibleMachines": [
-                        5,
                         8
                     ],
-                    "type": 4
+                    "type": 7
                 },
                 {
                     "eligibleMachines": [
-                        3
+                        3,
+                        6
                     ],
-                    "type": 3
+                    "type": 5
                 }
             ]
         }
@@ -516,51 +556,39 @@
     "numOpTypes": 10,
     "processingTimes": [
         [
-            8,
+            0,
+            0,
+            3,
+            0,
+            0,
+            4,
             0,
             0,
             0,
-            0,
-            0,
-            9,
-            0,
-            0,
-            1
+            2
         ],
         [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            8
+        ],
+        [
+            10,
+            7,
+            0,
             0,
             10,
             0,
             0,
             0,
             0,
-            0,
-            0,
-            0,
-            0
-        ],
-        [
-            3,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0
-        ],
-        [
-            0,
-            0,
-            0,
-            9,
-            0,
-            0,
-            0,
-            0,
-            0,
             0
         ],
         [
@@ -569,26 +597,13 @@
             0,
             0,
             0,
-            9,
             0,
             0,
-            5,
+            10,
+            0,
             0
         ],
         [
-            0,
-            0,
-            3,
-            0,
-            0,
-            0,
-            8,
-            0,
-            0,
-            3
-        ],
-        [
-            0,
             0,
             0,
             0,
@@ -596,42 +611,67 @@
             0,
             4,
             0,
+            10,
+            0,
+            5
+        ],
+        [
+            0,
+            0,
+            0,
+            9,
+            0,
+            0,
+            2,
+            0,
             0,
             0
         ],
         [
             0,
+            0,
+            1,
             6,
             0,
             0,
             0,
             0,
-            0,
-            0,
-            0,
+            9,
             0
         ],
         [
             0,
             0,
             0,
-            2,
             0,
             0,
             0,
             0,
             0,
+            4,
             0
         ],
         [
+            0,
+            0,
+            0,
+            0,
+            1,
+            5,
+            0,
+            0,
+            0,
+            8
+        ],
+        [
+            0,
+            0,
+            0,
             8,
             0,
             0,
-            2,
             0,
             0,
-            0,
-            7,
             0,
             0
         ]
