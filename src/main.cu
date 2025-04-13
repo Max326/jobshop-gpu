@@ -6,10 +6,19 @@
 #include "JobShopData.cuh"
 #include "JobShopHeuristic.cuh"
 
+// TODO: implement more features, according to Flexible Job Shop document
+// 		- wasted time
+// 		- total number of operations left
+// 		- one hot encodings
+// TODO: test scheduling correctness
+// TODO: print jobs before scheduling
+// TODO: print machines with eligible operations
+// TODO: parallel operations (graphs)
+
 int main() {
 	srand(time(0));
 
-	const bool generateRandomJobs = true;
+	const bool generateRandomJobs = false;
 	const bool generateRandomNNSetup = false;
 	const int numProblems = 1;
 
@@ -41,7 +50,7 @@ int main() {
 		GPUProblem* d_problems;
 		std::vector<GPUProblem> h_problems(numProblems);
 
-		GPUProblem template_problem = JobShopDataGPU::UploadToGPU(data);  // todo cleanup
+		GPUProblem template_problem = JobShopDataGPU::UploadToGPU(data);  // TODO cleanup
 
 		// Copy template to all problems
 		cudaMalloc(&d_problems, sizeof(GPUProblem) * numProblems);
