@@ -284,8 +284,6 @@ __global__ void SolveFJSSPKernel(
 				// Validate machine index
 				if(machine < 0 || machine >= problem.numMachines) continue;
 
-				int start_time = max(machine_times[machine], job_last[job]);
-
 				// Calculate processing time with bounds checking
 				int ptime = 0;
 				int type_idx = op.type * problem.numMachines + machine;
@@ -293,6 +291,19 @@ __global__ void SolveFJSSPKernel(
 					ptime = problem.processingTimes[type_idx];
 				}
 				if(ptime <= 0) continue;
+
+				/* maybe later
+				int start_time = 0;
+				int flat_index = machine * solutions->maxOps + op_index;
+				int previous_op_start_time = my_schedule[flat_index-1].startTime;
+
+				if(job_last[job] + ptime < previous_op_start_time) {  // filling holes in schedule
+					start_time = job_last[job];
+				} else {
+					start_time = max(machine_times[machine], job_last[job]);
+				}
+				*/
+				int start_time = max(machine_times[machine], job_last[job]);
 
 				float features[4] = {
 					static_cast<float>(ptime),
