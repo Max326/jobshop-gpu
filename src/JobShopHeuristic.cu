@@ -273,7 +273,7 @@ __global__ void SolveFJSSPKernel(
 			// Skip if no operations left
 			if(job_next[job] >= problem.jobs[job].operationCount) continue;
 
-			GPUOperation op = problem.jobs[job].operations[job_next[job]];
+			GPUOperation op = problem.jobs[job].operations[job_next[job]]; //? what?
 
 			// Validate operation
 			if(op.eligibleCount <= 0 || op.eligibleMachines == nullptr) continue;
