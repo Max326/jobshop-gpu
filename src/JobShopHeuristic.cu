@@ -214,32 +214,51 @@ __global__ void SolveFJSSPKernel(
 	if(problem_id >= total_problems) return;
 
 	const GPUProblem problem = problems[problem_id];
-	SolutionManager::GPUSolutions solution = solutions[problem_id];
 
+	// DEBUG: BEGIN
+	SolutionManager::GPUSolutions solution = solutions[problem_id];
 	int* my_counts = solutions->allScheduleCounts +
 					 problem_id * solutions->numMachines;
-
 	OperationSchedule* my_schedule = solutions->allSchedules +
 									 problem_id * solutions->numMachines * solutions->maxOps;
+	// DEBUG: END
 
 	int* my_makespan = solutions->allMakespans + problem_id;
 
 	// printf("Solving problem %d\n", problem_id);
 	int scheduledOps = 0;
 
+	// Not needed / too slow
 	// Validation checks
-	if(problem.numJobs <= 0 || problem.numMachines <= 0) return;
-	if(problem.jobs == nullptr || problem.processingTimes == nullptr) return;
+	//if(problem.numJobs <= 0 || problem.numMachines <= 0) return;
+	//if(problem.jobs == nullptr || problem.processingTimes == nullptr) return;
 
 	int machine_times[MAX_MACHINES] = {0};
-	int job_next[MAX_JOBS] = {0};
-	int job_last[MAX_JOBS] = {0};
+	//int job_next[MAX_JOBS] = {0};
+	//int job_last[MAX_JOBS] = {0};
 
 	while(true) {
 		float best_score = -FLT_MAX;
 		int best_job = -1, best_op = -1, best_machine = -1;
 		int best_start_time = 0;
 
+		// Iterate over all availible operations in all jobs
+		for(int jobID = 0; jobID < problem.numJobs; jobID++) {
+			GPUJob* job = &(problem.jobs[jobID]);
+			for(int operationID = 0; operationID < problem.numJobs; job++) {
+				GPUOperation* operation = &(job->operations[operationID]);
+				if (operation->predecessorCount != 0) continue;
+
+				// since operation is availible iterate over its eligible Machines
+				for(int m = 0; m < operation->eligibleCount; m++) {
+					int machineID = operation->eligibleMachines[m];
+
+
+				}
+			}
+		}
+
+		/*
 		for(int job = 0; job < problem.numJobs; job++) {
 			// Skip if no operations left
 			if(job_next[job] >= problem.jobs[job].operationCount) continue;
@@ -282,6 +301,12 @@ __global__ void SolveFJSSPKernel(
 				}
 			}
 		}
+		*/
+
+
+
+
+
 
 		if(best_job == -1) break;  // No more operations to schedule
 
