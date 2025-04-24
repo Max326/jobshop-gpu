@@ -316,13 +316,17 @@ __global__ void SolveFJSSPKernel(
 
 		// Mark this operation as done
 		bestOperation->predecessorCount = -1;
+		// atomicSub(&bestOperation->predecessorCount, 1);
+
 
 		// Update operation successors
 		int* bestOperationSuccessorsIDs = bestOperation->successorsIDs;
 		for (int s = 0; s < bestOperation->successorCount; ++s) {
 			int successorID = bestOperationSuccessorsIDs[s];
 			GPUOperation* successorOperation = &(bestJob->operations[successorID]);
-			successorOperation->predecessorCount -= 1;
+			// successorOperation->predecessorCount -= 1;
+			atomicSub(&successorOperation->predecessorCount, 1);
+
 			successorOperation->lastPredecessorEndTime = 
 				max(successorOperation->lastPredecessorEndTime, endTime);
 		}
