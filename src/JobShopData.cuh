@@ -220,14 +220,18 @@ struct GPUOperation {
 	int type;
 	int* eligibleMachines;	// Pointer to array in device memory
 	int eligibleCount;
+	int* successorsIDs;
+	int successorCount;
+	int predecessorCount; // -1 = done, 0 = availible, 1+ = not availible yet
+	int lastPredecessorEndTime;
 };
 
 struct GPUJob {
 	int id;
 	GPUOperation* operations;  // Device pointer
 	int operationCount;
-	int nextOpIndex;
-	int lastOpEndTime;
+	//int nextOpIndex;
+	//int lastOpEndTime;
 };
 
 struct GPUProblem {
@@ -244,7 +248,6 @@ public:
 	static void FreeGPUData(GPUProblem& gpuProblem);
 	// Upload CPU data to GPU
 	static GPUProblem UploadToGPU(const JobShopData& problem);
-
 	// Free GPU memory
 	void DownloadFromGPU(GPUProblem& gpuProblem, JobShopData& cpuProblem);
 };

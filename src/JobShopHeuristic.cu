@@ -238,128 +238,111 @@ __global__ void SolveFJSSPKernel(
 
 	const GPUProblem problem = problems[problem_id];
 
-	// debug
+	// DEBUG: BEGIN
 	if(problem_id == 0) {  // Only print first problem to avoid clutter
 		PrintProblemDetails(problem);
 	}
 
 	// SolutionManager::GPUSolutions solution = solutions[problem_id];
-
 	int* my_counts = solutions->allScheduleCounts +
 					 problem_id * solutions->numMachines;
-
 	OperationSchedule* my_schedule = solutions->allSchedules +
 									 problem_id * solutions->numMachines * solutions->maxOps;
+	// DEBUG: END
 
 	int* my_makespan = solutions->allMakespans + problem_id;
 
 	// printf("Solving problem %d\n", problem_id);
 	int scheduledOps = 0;
 
+	// Not needed / too slow
 	// Validation checks
-	if(problem.numJobs <= 0 || problem.numMachines <= 0) return;
-	if(problem.jobs == nullptr || problem.processingTimes == nullptr) return;
+	//if(problem.numJobs <= 0 || problem.numMachines <= 0) return;
+	//if(problem.jobs == nullptr || problem.processingTimes == nullptr) return;
 
 	int machine_times[MAX_MACHINES] = {0};
-	int job_next[MAX_JOBS] = {0};
-	int job_last[MAX_JOBS] = {0};
+	//int job_next[MAX_JOBS] = {0};
+	//int job_last[MAX_JOBS] = {0};
 
 	while(true) {
-		float best_score = -FLT_MAX;
-		int best_job = -1, best_op = -1, best_machine = -1;
-		int best_start_time = 0;
+		float bestScoreValue = -FLT_MAX;
+		int bestJobID = -1, bestOpID = -1, bestMachineID = -1;
+		int bestStartTime = 0;
 
-		for(int job = 0; job < problem.numJobs; job++) {
-			// Skip if no operations left
-			if(job_next[job] >= problem.jobs[job].operationCount) continue;
+		// Iterate over all availible operations in all jobs
+		for(int jobID = 0; jobID < problem.numJobs; ++jobID) {
+			GPUJob* job = &(problem.jobs[jobID]);
+			for(int operationID = 0; operationID < job->operationCount; ++operationID) {
+				GPUOperation* operation = &(job->operations[operationID]);
+				if (operation->predecessorCount != 0) continue;
 
-			GPUOperation op = problem.jobs[job].operations[job_next[job]]; //? what?
+				// since operation is availible iterate over its eligible Machines
+				for(int m = 0; m < operation->eligibleCount; m++) {
+					int machineID = operation->eligibleMachines[m];
+					int start_time = max(machine_times[machineID], operation->lastPredecessorEndTime);
+					int opMach_idx = operation->type * problem.numMachines + machineID;
+					int pTime = problem.processingTimes[opMach_idx];
 
-			// Validate operation
-			if(op.eligibleCount <= 0 || op.eligibleMachines == nullptr) continue;
-
-			for(int m = 0; m < op.eligibleCount; m++) {
-				int machine = op.eligibleMachines[m];
-
-				// Validate machine index
-				if(machine < 0 || machine >= problem.numMachines) continue;
-
-				// Calculate processing time with bounds checking
-				int ptime = 0;
-				int type_idx = op.type * problem.numMachines + machine;
-				if(type_idx >= 0 && type_idx < problem.numOpTypes * problem.numMachines) {
-					ptime = problem.processingTimes[type_idx];
-				}
-				if(ptime <= 0) continue;
-
-				/* maybe later
-				int start_time = 0;
-				int flat_index = machine * solutions->maxOps + op_index;
-				int previous_op_start_time = my_schedule[flat_index-1].startTime;
-
-				if(job_last[job] + ptime < previous_op_start_time) {  // filling holes in schedule
-					start_time = job_last[job];
-				} else {
-					start_time = max(machine_times[machine], job_last[job]);
-				}
-				*/
-				int start_time = max(machine_times[machine], job_last[job]);
-
-				float features[4] = {
-					static_cast<float>(ptime),
-					static_cast<float>(start_time - machine_times[machine]),
-					static_cast<float>(job_last[job] - machine_times[machine]),
-					static_cast<float>(problem.jobs[job].operationCount)};
-
-				float score = nn_eval.Evaluate(features);
-
-				if(score > best_score) {
-					best_score = score;
-					best_job = job;
-					best_op = job_next[job];
-					best_machine = machine;
-					best_start_time = start_time;
+					float features[4] = {
+						static_cast<float>(pTime),
+						static_cast<float>(start_time - machine_times[machineID]),
+						static_cast<float>(4.0),
+						static_cast<float>(problem.jobs[jobID].operationCount)};
+	
+					float score = nn_eval.Evaluate(features);
+	
+					if(score > bestScoreValue) {
+						bestScoreValue = score;
+						bestJobID = jobID;
+						bestOpID = operationID;
+						bestMachineID = machineID;
+						bestStartTime= start_time;
+					}
 				}
 			}
 		}
 
-		if(best_job == -1) break;  // No more operations to schedule
+		// Problem is scheduled. The end.
+		if(bestJobID == -1) break;
 
-		// Validate indices before scheduling
-		if(best_machine < 0 || best_machine >= problem.numMachines) continue;
-		if(best_job < 0 || best_job >= problem.numJobs) continue;
+		GPUJob* bestJob = &(problem.jobs[bestJobID]);
+		GPUOperation* bestOperation = &(bestJob->operations[bestOpID]);
+		int opMach_idx = bestOperation->type * problem.numMachines + bestMachineID;
+		int pTime = problem.processingTimes[opMach_idx];
 
-		// Calculate processing time with validation
-		int ptime = 0;
-		GPUOperation best_op_data = problem.jobs[best_job].operations[best_op];
-		int type_idx = best_op_data.type * problem.numMachines + best_machine;
-		if(type_idx >= 0 && type_idx < problem.numOpTypes * problem.numMachines) {
-			ptime = problem.processingTimes[type_idx];
+		int endTime = bestStartTime + pTime;
+
+		// Mark this operation as done
+		bestOperation->predecessorCount = -1;
+
+		// Update operation successors
+		int* bestOperationSuccessorsIDs = bestOperation->successorsIDs;
+		for (int s = 0; s < bestOperation->successorCount; ++s) {
+			int successorID = bestOperationSuccessorsIDs[s];
+			GPUOperation* successorOperation = &(bestJob->operations[successorID]);
+			successorOperation->predecessorCount -= 1;
+			successorOperation->lastPredecessorEndTime = 
+				max(successorOperation->lastPredecessorEndTime, endTime);
 		}
-		if(ptime <= 0) continue;
 
-		int end_time = best_start_time + ptime;
-
-		// Schedule the operation
-		int op_index = atomicAdd(&my_counts[best_machine], 1);
+		// DEBUG: BEGIN
+		int op_index = atomicAdd(&my_counts[bestMachineID], 1);
 		if(op_index < solutions->maxOps) {
-			int flat_index = best_machine * solutions->maxOps + op_index;
+			int flat_index = bestMachineID * solutions->maxOps + op_index;
 			my_schedule[flat_index] = {
-				best_job,
-				best_op_data.type,
-				best_start_time,
-				end_time};
+				bestJobID,
+				bestOperation->type,
+				bestStartTime,
+				endTime};
 		}
+		// DEBUG: END
 
-		machine_times[best_machine] = end_time;
-		job_last[best_job] = end_time;
-		job_next[best_job]++;
-
-		atomicMax(my_makespan, end_time);
+		machine_times[bestMachineID] = endTime;
+		atomicMax(my_makespan, endTime);
 
 		printf("%d: Scheduled: Job %d, OpType %d on Machine %d (%d-%d), makespan: %d\n",
-			   scheduledOps, best_job, best_op_data.type, best_machine,
-			   end_time - ptime, end_time, *my_makespan);
+			   scheduledOps, bestJobID, bestOperation->type, bestMachineID,
+			   endTime - pTime, endTime, *my_makespan);
 
 		scheduledOps++;
 	}

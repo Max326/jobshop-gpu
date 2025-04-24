@@ -19,8 +19,8 @@ GPUProblem JobShopDataGPU::UploadToGPU(const JobShopData& problem) {
 		GPUJob& gpuJob = hostJobs[j];
 
 		gpuJob.id = cpuJob.id;
-		gpuJob.nextOpIndex = cpuJob.nextOpIndex;
-		gpuJob.lastOpEndTime = cpuJob.lastOpEndTime;
+		// gpuJob.nextOpIndex = cpuJob.nextOpIndex;
+		// gpuJob.lastOpEndTime = cpuJob.lastOpEndTime;
 		gpuJob.operationCount = cpuJob.operations.size();
 
 		// Allocate operations
