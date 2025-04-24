@@ -17,6 +17,9 @@
 struct Operation {
 	int type;
 	std::vector<int> eligibleMachines;	// List of machines that can perform this operation
+	std::vector<int> successorsIDs;
+	int predecessorCount = 0;  // -1 = done, 0 = available, 1+ = not available yet
+	int lastPredecessorEndTime = 0;
 };
 
 struct Job {
@@ -35,8 +38,8 @@ public:
 	int numJobs;
 	int numOpTypes;	 // number of operation types
 	std::vector<Job> jobs;
-	std::vector<std::vector<int>> processingTimes;	// processing times for each operation type on each machine
-	std::vector<std::unordered_set<int>> machineEligibleOperations; // eligible operations for each machine
+	std::vector<std::vector<int>> processingTimes;					 // processing times for each operation type on each machine
+	std::vector<std::unordered_set<int>> machineEligibleOperations;	 // eligible operations for each machine
 
 	// TODO: implement
 	bool operInJobMultiplication = false;
@@ -108,13 +111,26 @@ public:
 			for(const auto& item: j.at("jobs")) {
 				Job job;
 				job.id = item.at("id").get<int>();
-				job.nextOpIndex = item.value("nextOpIndex", 0);		 // default to 0 if not present
-				job.lastOpEndTime = item.value("lastOpEndTime", 0);	 // default to 0 if not present
 
-				for(const auto& opItem: item.at("operations")) {
+				// Preserve but ignore legacy fields
+				job.nextOpIndex = item.value("nextOpIndex", 0);
+				job.lastOpEndTime = item.value("lastOpEndTime", 0);
+
+				// Load operations with linear dependencies
+				auto operationsJson = item.at("operations");
+				for(size_t opIdx = 0; opIdx < operationsJson.size(); opIdx++) {
 					Operation op;
-					op.type = opItem.at("type").get<int>();
-					op.eligibleMachines = opItem.at("eligibleMachines").get<std::vector<int>>();
+					op.type = operationsJson[opIdx].at("type").get<int>();
+					op.eligibleMachines = operationsJson[opIdx].at("eligibleMachines").get<std::vector<int>>();
+
+					// Set dependencies based on position
+					op.predecessorCount = (opIdx == 0) ? 0 : 1;
+
+					// Linear successors: each op points to next in sequence
+					if(opIdx < operationsJson.size() - 1) {
+						op.successorsIDs.push_back(opIdx + 1);
+					}
+
 					job.operations.push_back(op);
 				}
 
@@ -197,6 +213,11 @@ inline JobShopData GenerateData() {
 			Operation operation;
 			operation.type = opTypes[o];  // Random operation type
 
+			operation.predecessorCount = (o == 0) ? 0 : 1;
+			if(o < numOperations - 1) {
+				operation.successorsIDs.push_back(o + 1);
+			}
+
 			// get eligible machines for this operation type (non zero in processingTimes)
 			for(int m = 0; m < data.numMachines; ++m) {
 				if(data.processingTimes[operation.type][m] > 0) {
@@ -222,7 +243,7 @@ struct GPUOperation {
 	int eligibleCount;
 	int* successorsIDs;
 	int successorCount;
-	int predecessorCount; // -1 = done, 0 = availible, 1+ = not availible yet
+	int predecessorCount;  // -1 = done, 0 = available, 1+ = not available yet
 	int lastPredecessorEndTime;
 };
 
@@ -230,8 +251,8 @@ struct GPUJob {
 	int id;
 	GPUOperation* operations;  // Device pointer
 	int operationCount;
-	//int nextOpIndex;
-	//int lastOpEndTime;
+	// int nextOpIndex;
+	// int lastOpEndTime;
 };
 
 struct GPUProblem {

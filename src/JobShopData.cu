@@ -32,12 +32,20 @@ GPUProblem JobShopDataGPU::UploadToGPU(const JobShopData& problem) {
 			GPUOperation& gpuOp = hostOps[o];
 
 			gpuOp.type = cpuOp.type;
+			gpuOp.predecessorCount = cpuOp.predecessorCount;
+			gpuOp.lastPredecessorEndTime = cpuOp.lastPredecessorEndTime;
+
 			gpuOp.eligibleCount = cpuOp.eligibleMachines.size();
 
 			// Allocate and copy eligible machines
 			cudaMalloc(&gpuOp.eligibleMachines, sizeof(int) * gpuOp.eligibleCount);
 			cudaMemcpy(gpuOp.eligibleMachines, cpuOp.eligibleMachines.data(),
 					   sizeof(int) * gpuOp.eligibleCount, cudaMemcpyHostToDevice);
+
+			gpuOp.successorCount = cpuOp.successorsIDs.size();
+			cudaMalloc(&gpuOp.successorsIDs, sizeof(int) * gpuOp.successorCount);
+			cudaMemcpy(gpuOp.successorsIDs, cpuOp.successorsIDs.data(),
+					   sizeof(int) * gpuOp.successorCount, cudaMemcpyHostToDevice);
 		}
 
 		// Copy operations to device
@@ -82,6 +90,7 @@ void JobShopDataGPU::FreeGPUData(GPUProblem& gpuProblem) {
 			for(auto& op: tempOps) {
 				if(op.eligibleMachines) {
 					cudaFree(op.eligibleMachines);
+					cudaFree(op.successorsIDs);
 				}
 			}
 			cudaFree(job.operations);
