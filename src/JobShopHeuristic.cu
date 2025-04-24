@@ -239,9 +239,9 @@ __global__ void SolveFJSSPKernel(
 	const GPUProblem problem = problems[problem_id];
 
 	// DEBUG: BEGIN
-	// if(problem_id == 0) {  // Only print first problem to avoid clutter
-	// 	PrintProblemDetails(problem);
-	// }
+	if(problem_id == 0) {  // Only print first problem to avoid clutter
+		PrintProblemDetails(problem);
+	}
 
 	// SolutionManager::GPUSolutions solution = solutions[problem_id];
 	int* my_counts = solutions->allScheduleCounts +
