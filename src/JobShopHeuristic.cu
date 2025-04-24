@@ -283,10 +283,10 @@ __global__ void SolveFJSSPKernel(
 					int opMach_idx = operation->type * problem.numMachines + machineID;
 					int pTime = problem.processingTimes[opMach_idx];
 
-					float features[4] = {
+					float features[3] = {
 						static_cast<float>(pTime),
 						static_cast<float>(start_time - machine_times[machineID]),
-						static_cast<float>(4.0),
+						// static_cast<float>(4.0),
 						static_cast<float>(problem.jobs[jobID].operationCount)};
 	
 					float score = nn_eval.Evaluate(features);
