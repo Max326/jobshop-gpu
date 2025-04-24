@@ -18,7 +18,7 @@ int main() {
 
 	const bool generateRandomJobs = false;
 	const bool generateRandomNNSetup = false;
-	const int numProblems = 300;
+	const int numProblems = 30000;
 
 	const std::vector<int> topology = {4, 32, 16, 1};
 
@@ -48,12 +48,15 @@ int main() {
 		GPUProblem* d_problems;
 		std::vector<GPUProblem> h_problems(numProblems);
 
-		GPUProblem template_problem = JobShopDataGPU::UploadToGPU(data);  // TODO cleanup
+		// GPUProblem template_problem = JobShopDataGPU::UploadToGPU(data);  // TODO cleanup
+		for(int i=0; i<numProblems; ++i) {
+			h_problems[i] = JobShopDataGPU::UploadToGPU(data);  // Create unique copy for each problem
+		}
 
 		// Copy template to all problems
 		cudaMalloc(&d_problems, sizeof(GPUProblem) * numProblems);
-		std::vector<GPUProblem> temp(numProblems, template_problem);
-		cudaMemcpy(d_problems, temp.data(),
+		// std::vector<GPUProblem> temp(numProblems, template_problem);
+		cudaMemcpy(d_problems, h_problems.data(),
 				   sizeof(GPUProblem) * numProblems,
 				   cudaMemcpyHostToDevice);
 
@@ -80,7 +83,12 @@ int main() {
 		// 7. Clean up GPU memory
 		SolutionManager::FreeGPUSolutions(solutions_batch);
 		cudaFree(d_problems);
-		JobShopDataGPU::FreeGPUData(template_problem);
+
+		// JobShopDataGPU::FreeGPUData(template_problem);
+		for (int i = 0; i<numProblems; ++i) {
+			JobShopDataGPU::FreeGPUData(h_problems[i]);
+		}
+
 		delete[] solutions;
 
 	} catch(const std::exception& e) {

@@ -128,6 +128,8 @@ void JobShopHeuristic::SolveBatch(
 	auto eval = neuralNetwork.GetDeviceEvaluator();
 	int threads = 256;
 	int blocks = (numProblems + threads - 1) / threads;
+	
+	cudaDeviceSetLimit(cudaLimitStackSize, 4096);  // Before kernel launch
 
 	SolveFJSSPKernel<<<blocks, threads>>>(problems, eval, solutions, numProblems);
 	cudaDeviceSynchronize();
@@ -239,9 +241,9 @@ __global__ void SolveFJSSPKernel(
 	const GPUProblem problem = problems[problem_id];
 
 	// DEBUG: BEGIN
-	if(problem_id == 0) {  // Only print first problem to avoid clutter
-		PrintProblemDetails(problem);
-	}
+	// if(problem_id == 0) {  // Only print first problem to avoid clutter
+	// 	PrintProblemDetails(problem);
+	// }
 
 	// SolutionManager::GPUSolutions solution = solutions[problem_id];
 	int* my_counts = solutions->allScheduleCounts +
@@ -340,9 +342,9 @@ __global__ void SolveFJSSPKernel(
 		machine_times[bestMachineID] = endTime;
 		atomicMax(my_makespan, endTime);
 
-		printf("%d: Scheduled: Job %d, OpType %d on Machine %d (%d-%d), makespan: %d\n",
-			   scheduledOps, bestJobID, bestOperation->type, bestMachineID,
-			   endTime - pTime, endTime, *my_makespan);
+		// printf("%d: Scheduled: Job %d, OpType %d on Machine %d (%d-%d), makespan: %d\n",
+		// 	   scheduledOps, bestJobID, bestOperation->type, bestMachineID,
+		// 	   endTime - pTime, endTime, *my_makespan);
 
 		scheduledOps++;
 	}
