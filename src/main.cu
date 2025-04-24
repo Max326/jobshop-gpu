@@ -18,7 +18,7 @@ int main() {
 
 	const bool generateRandomJobs = false;
 	const bool generateRandomNNSetup = false;
-	const int numProblems = 1;
+	const int numProblems = 300;
 
 	const std::vector<int> topology = {4, 32, 16, 1};
 
