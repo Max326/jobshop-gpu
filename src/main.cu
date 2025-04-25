@@ -16,20 +16,26 @@
 int main() {
 	srand(time(0));
 
+	const bool useParallelData = true;
 	const bool generateRandomJobs = false;
 	const bool generateRandomNNSetup = false;
-	const int numProblems = 9600;
+	const int numProblems = 222;
 
 	const std::vector<int> topology = {4, 32, 16, 1};
 
 	try {
 		// 1. Load or generate problem data
 		JobShopData data;
-		if(generateRandomJobs) {
-			data = GenerateData();
-			data.SaveToJson("jobshop_data");
+
+		if (useParallelData){
+			data.LoadFromParallelJson("test.json");
 		} else {
-			data.LoadFromJson("jobshop_data");
+			if(generateRandomJobs) {
+				data = GenerateData();
+				data.SaveToJson("jobshop_data");
+			} else {
+				data.LoadFromJson("jobshop_data");
+			}
 		}
 
 		// 2. Load or generate neural network
@@ -48,15 +54,17 @@ int main() {
 		GPUProblem* d_problems;
 		std::vector<GPUProblem> h_problems(numProblems);
 
-		GPUProblem template_problem = JobShopDataGPU::UploadToGPU(data);  // TODO cleanup
+		// GPUProblem template_problem = JobShopDataGPU::UploadToGPU(data);  // TODO cleanup
+
 		for(int i=0; i<numProblems; ++i) {
-			h_problems[i] = JobShopDataGPU::UploadToGPU(data);  // Create unique copy for each problem
+			h_problems[i] = JobShopDataGPU::UploadParallelToGPU(data);  // Create unique copy for each problem
 		}
 
 		// Copy template to all problems
 		cudaMalloc(&d_problems, sizeof(GPUProblem) * numProblems);
 
-		std::vector<GPUProblem> temp(numProblems, template_problem);
+		// std::vector<GPUProblem> temp(numProblems, template_problem);
+
 		cudaMemcpy(d_problems, h_problems.data(),
 				   sizeof(GPUProblem) * numProblems,
 				   cudaMemcpyHostToDevice);
@@ -85,7 +93,8 @@ int main() {
 		SolutionManager::FreeGPUSolutions(solutions_batch);
 		cudaFree(d_problems);
 
-		JobShopDataGPU::FreeGPUData(template_problem);
+		// JobShopDataGPU::FreeGPUData(template_problem);
+
 		for (int i = 0; i<numProblems; ++i) {
 			JobShopDataGPU::FreeGPUData(h_problems[i]);
 		}

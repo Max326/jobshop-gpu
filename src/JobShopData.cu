@@ -79,6 +79,74 @@ GPUProblem JobShopDataGPU::UploadToGPU(const JobShopData& problem) {
 	return gpuProblem;
 }
 
+GPUProblem JobShopDataGPU::UploadParallelToGPU(const JobShopData& problem) {
+    GPUProblem gpuProblem;
+    
+    // 1. Copy basic dimensions
+    gpuProblem.numMachines = problem.numMachines;
+    gpuProblem.numJobs = problem.numJobs;
+    gpuProblem.numOpTypes = problem.numOpTypes;
+
+    // 2. Upload processing times
+    std::vector<int> flatTimes(problem.numOpTypes * problem.numMachines, 0);
+    for (int t = 0; t < problem.numOpTypes; ++t) {
+        for (int m = 0; m < problem.numMachines; ++m) {
+            flatTimes[t * problem.numMachines + m] = problem.processingTimes[t][m];
+        }
+    }
+    cudaMalloc(&gpuProblem.processingTimes, flatTimes.size() * sizeof(int));
+    cudaMemcpy(gpuProblem.processingTimes, flatTimes.data(), 
+              flatTimes.size() * sizeof(int), cudaMemcpyHostToDevice);
+
+    // 3. Upload jobs and operations
+    std::vector<GPUJob> hostJobs(problem.numJobs);
+    cudaMalloc(&gpuProblem.jobs, problem.numJobs * sizeof(GPUJob));
+    
+    for (int j = 0; j < problem.numJobs; ++j) {
+        const auto& cpuJob = problem.jobs[j];
+        GPUJob gpuJob;
+        gpuJob.id = cpuJob.id;
+        gpuJob.operationCount = cpuJob.operations.size();
+
+        // Upload operations
+        std::vector<GPUOperation> hostOps(cpuJob.operations.size());
+        cudaMalloc(&gpuJob.operations, hostOps.size() * sizeof(GPUOperation));
+        
+        for (size_t o = 0; o < cpuJob.operations.size(); ++o) {
+            const auto& cpuOp = cpuJob.operations[o];
+            GPUOperation gpuOp;
+            
+            // Copy operation metadata
+            gpuOp.type = cpuOp.type;
+            gpuOp.predecessorCount = cpuOp.predecessorCount;
+            gpuOp.lastPredecessorEndTime = cpuOp.lastPredecessorEndTime;
+
+            // Upload eligible machines
+            cudaMalloc(&gpuOp.eligibleMachines, cpuOp.eligibleMachines.size() * sizeof(int));
+            cudaMemcpy(gpuOp.eligibleMachines, cpuOp.eligibleMachines.data(),
+                      cpuOp.eligibleMachines.size() * sizeof(int), cudaMemcpyHostToDevice);
+            gpuOp.eligibleCount = cpuOp.eligibleMachines.size();
+
+            // Upload successors
+            cudaMalloc(&gpuOp.successorsIDs, cpuOp.successorsIDs.size() * sizeof(int));
+            cudaMemcpy(gpuOp.successorsIDs, cpuOp.successorsIDs.data(),
+                      cpuOp.successorsIDs.size() * sizeof(int), cudaMemcpyHostToDevice);
+            gpuOp.successorCount = cpuOp.successorsIDs.size();
+
+            hostOps[o] = gpuOp;
+        }
+        
+        cudaMemcpy(gpuJob.operations, hostOps.data(),
+                  hostOps.size() * sizeof(GPUOperation), cudaMemcpyHostToDevice);
+        hostJobs[j] = gpuJob;
+    }
+
+    cudaMemcpy(gpuProblem.jobs, hostJobs.data(),
+              hostJobs.size() * sizeof(GPUJob), cudaMemcpyHostToDevice);
+
+    return gpuProblem;
+}
+
 void JobShopDataGPU::FreeGPUData(GPUProblem& gpuProblem) {
 	// Helper function to free nested structures
 	auto FreeJob = [](GPUJob& job) {
