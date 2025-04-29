@@ -388,29 +388,30 @@ inline JobShopData GenerateData() {
 /* GPU Implementation */
 
 struct GPUOperation {
-	int type;
-	int* eligibleMachines;	// Pointer to array in device memory
-	int eligibleCount;
-	int* successorsIDs;
-	int successorCount;
-	int predecessorCount;  // -1 = done, 0 = available, 1+ = not available yet
-	int lastPredecessorEndTime;
+    int type;
+    int eligibleMachinesOffset; // offset 
+    int eligibleCount;
+    int successorsOffset;       // offset 
+    int successorCount;
+    int predecessorCount;  // -1 = done, 0 = available, 1+ = not available yet
+    int lastPredecessorEndTime;
 };
 
 struct GPUJob {
-	int id;
-	GPUOperation* operations;  // Device pointer
-	int operationCount;
-	// int nextOpIndex;
-	// int lastOpEndTime;
+    int id;
+    int operationsOffset; // offset 
+    int operationCount;
 };
 
 struct GPUProblem {
-	int numMachines;
-	int numJobs;
-	int numOpTypes;
-	GPUJob* jobs;		   // Device pointer
-	int* processingTimes;  // Flattened [opType][machine]
+    int numMachines;
+    int numJobs;
+    int numOpTypes;
+    GPUJob* jobs;                // Device pointer
+    GPUOperation* operations;    // Device pointer 
+    int* eligibleMachines;       // Device pointer 
+    int* successorsIDs;          // Device pointer 
+    int* processingTimes;        // Flattened [opType][machine]
 };
 
 class JobShopDataGPU

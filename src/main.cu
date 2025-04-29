@@ -16,10 +16,10 @@
 int main() {
 	srand(time(0));
 
-	const bool useParallelData = true;
+	const bool useParallelData = false;
 	const bool generateRandomJobs = false;
 	const bool generateRandomNNSetup = false;
-	const int numProblems = 222;
+	const int numProblems = 9600;
 
 	const std::vector<int> topology = {4, 32, 16, 1};
 
@@ -73,7 +73,21 @@ int main() {
 		JobShopHeuristic heuristic(std::move(nn));
 		
 		// 5. Solve on GPU (even though we're just doing one problem)
+		cudaEvent_t start, stop;
+		cudaEventCreate(&start);
+		cudaEventCreate(&stop);
+
+		cudaEventRecord(start);
 		heuristic.SolveBatch(d_problems, &solutions_batch, numProblems);
+		cudaEventRecord(stop);
+
+		cudaEventSynchronize(stop);
+		float milliseconds = 0;
+		cudaEventElapsedTime(&milliseconds, start, stop);
+		std::cout << "Kernel execution time: " << milliseconds << " ms" << std::endl;
+
+		cudaEventDestroy(start);
+		cudaEventDestroy(stop);
 
 		cudaError_t kernelErr = cudaGetLastError();
 		if(kernelErr != cudaSuccess) {

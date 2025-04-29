@@ -273,16 +273,17 @@ __global__ void SolveFJSSPKernel(
 
 		// Iterate over all availible operations in all jobs
 		for(int jobID = 0; jobID < problem.numJobs; ++jobID) {
-			GPUJob* job = &(problem.jobs[jobID]);
-			for(int operationID = 0; operationID < job->operationCount; ++operationID) {
-				GPUOperation* operation = &(job->operations[operationID]);
-				if (operation->predecessorCount != 0) continue;
+			const GPUJob& job = problem.jobs[jobID];
+			for(int operationID = 0; operationID < job.operationCount; ++operationID) {
 
-				// since operation is availible iterate over its eligible Machines
-				for(int m = 0; m < operation->eligibleCount; m++) {
-					int machineID = operation->eligibleMachines[m];
-					int start_time = max(machine_times[machineID], operation->lastPredecessorEndTime);
-					int opMach_idx = operation->type * problem.numMachines + machineID;
+				GPUOperation& operation = problem.operations[job.operationsOffset + operationID];
+				if (operation.predecessorCount != 0) continue;
+		
+				for(int m = 0; m < operation.eligibleCount; m++) {
+
+					int machineID = problem.eligibleMachines[operation.eligibleMachinesOffset + m];
+					int start_time = max(machine_times[machineID], operation.lastPredecessorEndTime);
+					int opMach_idx = operation.type * problem.numMachines + machineID;
 					int pTime = problem.processingTimes[opMach_idx];
 
 					float features[4] = {
@@ -307,29 +308,26 @@ __global__ void SolveFJSSPKernel(
 		// Problem is scheduled. The end.
 		if(bestJobID == -1) break;
 
-		GPUJob* bestJob = &(problem.jobs[bestJobID]);
-		GPUOperation* bestOperation = &(bestJob->operations[bestOpID]);
-		int opMach_idx = bestOperation->type * problem.numMachines + bestMachineID;
+		GPUJob& bestJob = problem.jobs[bestJobID];
+		GPUOperation& bestOperation = problem.operations[bestJob.operationsOffset + bestOpID];
+		int opMach_idx = bestOperation.type * problem.numMachines + bestMachineID;
 		int pTime = problem.processingTimes[opMach_idx];
 
 		int endTime = bestStartTime + pTime;
 
 		// Mark this operation as done
-		bestOperation->predecessorCount = -1;
+		bestOperation.predecessorCount = -1;
 		// atomicSub(&bestOperation->predecessorCount, 1);
 
 
 		// Update operation successors
-		int* bestOperationSuccessorsIDs = bestOperation->successorsIDs;
-		for (int s = 0; s < bestOperation->successorCount; ++s) {
-			int successorID = bestOperationSuccessorsIDs[s];
-			GPUOperation* successorOperation = &(bestJob->operations[successorID]);
-			// successorOperation->predecessorCount -= 1;
-			atomicSub(&successorOperation->predecessorCount, 1);
-
-			successorOperation->lastPredecessorEndTime = 
-				max(successorOperation->lastPredecessorEndTime, endTime);
-		}
+		for (int s = 0; s < bestOperation.successorCount; ++s) {
+			int successorID = problem.successorsIDs[bestOperation.successorsOffset + s];
+			GPUOperation& successorOperation = problem.operations[bestJob.operationsOffset + successorID];
+			atomicSub(&successorOperation.predecessorCount, 1);
+			successorOperation.lastPredecessorEndTime = 
+				max(successorOperation.lastPredecessorEndTime, endTime);
+}
 
 		// DEBUG: BEGIN
 		int op_index = atomicAdd(&my_counts[bestMachineID], 1);
@@ -337,7 +335,7 @@ __global__ void SolveFJSSPKernel(
 			int flat_index = bestMachineID * solutions->maxOps + op_index;
 			my_schedule[flat_index] = {
 				bestJobID,
-				bestOperation->type,
+				bestOperation.type,
 				bestStartTime,
 				endTime};
 		}
@@ -376,11 +374,11 @@ __device__ void PrintProblemDetails(const GPUProblem& problem) {
 		printf("Job %d (%d ops):\n", job.id, job.operationCount);
 
 		for(int o = 0; o < job.operationCount; o++) {
-			GPUOperation op = job.operations[o];
+			GPUOperation op = problem.operations[job.operationsOffset + o];
 			printf("  Op type %d on machines: ", op.type);
-
+		
 			for(int m = 0; m < op.eligibleCount; m++) {
-				printf("%d ", op.eligibleMachines[m]);
+				printf("%d ", problem.eligibleMachines[op.eligibleMachinesOffset + m]);
 			}
 			printf("\n");
 		}
@@ -388,81 +386,6 @@ __device__ void PrintProblemDetails(const GPUProblem& problem) {
 	printf("========================\n\n");
 }
 
-/*
-JobShopHeuristic::CPUSolution JobShopHeuristic::Solve(const JobShopData& data) {  //! obsolete
-	CPUSolution solution;
-	solution.makespan = 0;
-	solution.schedule.resize(data.numMachines);
-
-	// solution.machineEndTimes.resize(data.numMachines, 0);
-
-	JobShopData modifiedData = data;
-
-	while(true) {
-		// Znajdź dostępne operacje
-		float bestScore = -FLT_MAX;
-		int bestJobId = -1, bestOperationIdx = -1, bestMachineId = -1;
-
-		int bestStartTime = 0;
-		int bestProcessingTime = 0;
-
-		for(int jobId = 0; jobId < modifiedData.numJobs; ++jobId) {
-			auto& job = modifiedData.jobs[jobId];
-
-			// Skip if no operations left or next operation isn't ready
-			if(job.nextOpIndex >= job.operations.size()) continue;
-
-			const auto& operation = job.operations[job.nextOpIndex];
-			const int opType = operation.type;
-
-			for(int machineId: operation.eligibleMachines) {
-				if(modifiedData.processingTimes[opType][machineId] == 0) continue;
-
-				// Get the time at which the machine will become available
-				const int machineAvailableTime = solution.schedule[machineId].empty()
-													 ? 0
-													 : solution.schedule[machineId].back().endTime;
-
-				const int startTime = std::max(machineAvailableTime, job.lastOpEndTime);
-
-				// const int envelope = job.lastOpEndTime - machineAvailableTime;
-
-				const int processingTime = data.processingTimes[opType][machineId];
-
-				// TODO: rule 1: check machine availability and save that to "envelope"
-				// TODO: rule 2: check for 'holes' in the schedule
-
-				// TODO: implement dynamic NN input size, not from topology
-				std::vector<float> features = ExtractFeatures(modifiedData, job, opType, machineId, startTime, machineAvailableTime);
-
-				// std::cout << "Features: " << features[0] << ", " << features[1] << ", " << features[2] << std::endl;
-
-				// features.resize(4);
-
-				std::vector<float> output = neuralNetwork.Forward(features);
-
-				float score = output[0];
-
-				if(score > bestScore) {
-					bestScore = score;
-					bestJobId = jobId;
-					bestOperationIdx = job.nextOpIndex;
-					bestMachineId = machineId;
-					bestStartTime = startTime;
-					bestProcessingTime = processingTime;
-				}
-			}
-		}
-
-		if(bestJobId == -1) break;	// Wszystkie operacje zaplanowane
-
-		// Zaplanuj operację na maszynie
-		UpdateSchedule(modifiedData, bestJobId, bestOperationIdx, bestMachineId, solution);
-	}
-
-	return solution;
-}
-*/
 
 std::vector<float> JobShopHeuristic::ExtractFeatures(const JobShopData& data,  //! obsolete
 													 const Job& job,
