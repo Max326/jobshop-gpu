@@ -16,28 +16,25 @@
 int main() {
 	srand(time(0));
 
-	const bool useParallelData = false;
+	const bool useParallelData = true;
 	const bool generateRandomJobs = false;
 	const bool generateRandomNNSetup = false;
-	const int numProblems = 9600;
+	const int numProblems = 10;
+
+	std::vector<JobShopData> all_problems;
+
+
 
 	const std::vector<int> topology = {4, 32, 16, 1};
 
 	try {
 		// 1. Load or generate problem data
-		JobShopData data;
-
-		if (useParallelData){
-			data.LoadFromParallelJson("test.json");
-		} else {
-			if(generateRandomJobs) {
-				data = GenerateData();
-				data.SaveToJson("jobshop_data");
-			} else {
-				data.LoadFromJson("jobshop_data");
-			}
+		for (int i = 0; i < numProblems; ++i) {
+			JobShopData data;
+			data.LoadFromParallelJson("data_test.json", i);
+			all_problems.push_back(std::move(data));
 		}
-
+		
 		// 2. Load or generate neural network
 		NeuralNetwork nn;
 		if(generateRandomNNSetup) {
@@ -49,15 +46,15 @@ int main() {
 
 		// 3. Prepare GPU data and upload to GPU
 
-		auto solutions_batch = SolutionManager::CreateGPUSolutions(numProblems, data.numMachines, 100);
+		auto solutions_batch = SolutionManager::CreateGPUSolutions(numProblems, all_problems[0].numMachines, 100);
 
 		GPUProblem* d_problems;
 		std::vector<GPUProblem> h_problems(numProblems);
 
-		// GPUProblem template_problem = JobShopDataGPU::UploadToGPU(data);  // TODO cleanup
+	
 
 		for(int i=0; i<numProblems; ++i) {
-			h_problems[i] = JobShopDataGPU::UploadParallelToGPU(data);  // Create unique copy for each problem
+			h_problems[i] = JobShopDataGPU::UploadToGPU(all_problems[i]);
 		}
 
 		// Copy template to all problems
@@ -101,7 +98,7 @@ int main() {
 			solutions[i].FromGPU(solutions_batch, i);
 		}
 
-		heuristic.PrintSchedule(solutions[0], data);
+		heuristic.PrintSchedule(solutions[0], all_problems[0]);
 
 		// 7. Clean up GPU memory
 		SolutionManager::FreeGPUSolutions(solutions_batch);

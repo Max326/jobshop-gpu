@@ -58,7 +58,7 @@ GPUProblem JobShopDataGPU::UploadToGPU(const JobShopData& problem) {
         }
     }
 
-    // 5. cudaMalloc/cudaMemcpy dla dużych tablic
+    // 5. cudaMalloc/cudaMemcpy
     cudaMalloc(&gpuProblem.jobs, sizeof(GPUJob) * problem.numJobs);
     cudaMemcpy(gpuProblem.jobs, hostJobs.data(), sizeof(GPUJob) * problem.numJobs, cudaMemcpyHostToDevice);
 
@@ -71,7 +71,7 @@ GPUProblem JobShopDataGPU::UploadToGPU(const JobShopData& problem) {
     cudaMalloc(&gpuProblem.successorsIDs, sizeof(int) * totalSuccessors);
     cudaMemcpy(gpuProblem.successorsIDs, allSuccessors.data(), sizeof(int) * totalSuccessors, cudaMemcpyHostToDevice);
 
-    // 6. Processing times (bez zmian)
+    // 6. Processing times 
     std::vector<int> flatTimes(problem.numOpTypes * problem.numMachines);
     for(int o = 0; o < problem.numOpTypes; o++) {
         for(int m = 0; m < problem.numMachines; m++) {
