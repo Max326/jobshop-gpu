@@ -290,6 +290,7 @@ public:
 				}
 			}
 		}
+		numOpTypes = currentType;
 
 		// Optional: Call your validation function if it exists
 		// if(!Validate()) {
