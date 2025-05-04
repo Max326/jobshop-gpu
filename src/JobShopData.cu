@@ -2,98 +2,137 @@
 
 #include "JobShopData.cuh"
 
-GPUProblem JobShopDataGPU::UploadToGPU(const JobShopData& problem) {
-    GPUProblem gpuProblem;
+BatchJobShopGPUData JobShopDataGPU::PrepareBatchCPU(const std::vector<JobShopData>& problems) {
+    BatchJobShopGPUData batch;
+    batch.numProblems = problems.size();
 
-    // 1. Copy basic info
-    gpuProblem.numMachines = problem.numMachines;
-    gpuProblem.numJobs = problem.numJobs;
-    gpuProblem.numOpTypes = problem.numOpTypes;
+    int jobsOffset = 0, opsOffset = 0, eligibleOffset = 0, succOffset = 0, procTimesOffset = 0;
 
-    // 2. count the ops, machines and succesors 
-    int totalOps = 0, totalEligible = 0, totalSuccessors = 0;
-    for (const auto& job : problem.jobs) {
-        totalOps += job.operations.size();
-        for (const auto& op : job.operations) {
-            totalEligible += op.eligibleMachines.size();
-            totalSuccessors += op.successorsIDs.size();
+    for (const auto& problem : problems) {
+        batch.jobsOffsets.push_back(batch.jobs.size());
+        batch.operationsOffsets.push_back(batch.operations.size());
+        batch.eligibleOffsets.push_back(batch.eligibleMachines.size());
+        batch.successorsOffsets.push_back(batch.successorsIDs.size());
+        batch.processingTimesOffsets.push_back(batch.processingTimes.size());
+
+        // Jobs
+        for (const auto& job : problem.jobs) {
+            GPUJob gpuJob;
+            gpuJob.id = job.id;
+            gpuJob.operationsOffset = batch.operations.size();
+            gpuJob.operationCount = job.operations.size();
+            batch.jobs.push_back(gpuJob);
+
+            // Operations
+            for (const auto& op : job.operations) {
+                GPUOperation gpuOp;
+                gpuOp.type = op.type;
+                gpuOp.predecessorCount = op.predecessorCount;
+                gpuOp.lastPredecessorEndTime = op.lastPredecessorEndTime;
+                gpuOp.eligibleMachinesOffset = batch.eligibleMachines.size();
+                gpuOp.eligibleCount = op.eligibleMachines.size();
+                for (int m : op.eligibleMachines)
+                    batch.eligibleMachines.push_back(m);
+                gpuOp.successorsOffset = batch.successorsIDs.size();
+                gpuOp.successorCount = op.successorsIDs.size();
+                for (int s : op.successorsIDs)
+                    batch.successorsIDs.push_back(s);
+                batch.operations.push_back(gpuOp);
+            }
+        }
+
+        // Processing times (spłaszczone)
+        for (const auto& row : problem.processingTimes)
+            for (int t : row)
+                batch.processingTimes.push_back(t);
+
+        // GPUProblem z offsetami (nie wskaźnikami!)
+        GPUProblem gpuProblem;
+        gpuProblem.numMachines = problem.numMachines;
+        gpuProblem.numJobs = problem.numJobs;
+        gpuProblem.numOpTypes = problem.numOpTypes;
+        // Wskaźniki ustaw na nullptr, offsety będą używane po stronie GPU
+        gpuProblem.jobs = nullptr;
+        gpuProblem.operations = nullptr;
+        gpuProblem.eligibleMachines = nullptr;
+        gpuProblem.successorsIDs = nullptr;
+        gpuProblem.processingTimes = nullptr;
+        batch.gpuProblems.push_back(gpuProblem);
+    }
+
+    // Dodaj końcowe offsety
+    batch.jobsOffsets.push_back(batch.jobs.size());
+    batch.operationsOffsets.push_back(batch.operations.size());
+    batch.eligibleOffsets.push_back(batch.eligibleMachines.size());
+    batch.successorsOffsets.push_back(batch.successorsIDs.size());
+    batch.processingTimesOffsets.push_back(batch.processingTimes.size());
+
+    return batch;
+}
+void JobShopDataGPU::UploadBatchToGPU(
+    BatchJobShopGPUData& batch,
+    GPUProblem*& d_gpuProblems,
+    GPUJob*& d_jobs,
+    GPUOperation*& d_ops,
+    int*& d_eligible,
+    int*& d_succ,
+    int*& d_procTimes,
+    int& numProblems)
+{
+    numProblems = batch.numProblems;
+
+    // 1. Przelicz offsety na lokalne w batch.jobs i batch.operations (CPU)
+    for (int i = 0; i < numProblems; ++i) {
+        int opBase = batch.operationsOffsets[i];
+        int eligibleBase = batch.eligibleOffsets[i];
+        int succBase = batch.successorsOffsets[i];
+
+        for(int j = batch.jobsOffsets[i]; j < batch.jobsOffsets[i+1]; ++j) {
+            batch.jobs[j].operationsOffset -= opBase;
+        }
+        for(int o = batch.operationsOffsets[i]; o < batch.operationsOffsets[i+1]; ++o) {
+            batch.operations[o].eligibleMachinesOffset -= eligibleBase;
+            batch.operations[o].successorsOffset -= succBase;
         }
     }
 
-    // 3. Allocate
-    std::vector<GPUJob> hostJobs(problem.numJobs);
-    std::vector<GPUOperation> allOps(totalOps);
-    std::vector<int> allEligible(totalEligible);
-    std::vector<int> allSuccessors(totalSuccessors);
+    // 2. Teraz kopiuj na GPU
+    cudaMalloc(&d_jobs, batch.jobs.size() * sizeof(GPUJob));
+    cudaMemcpy(d_jobs, batch.jobs.data(), batch.jobs.size() * sizeof(GPUJob), cudaMemcpyHostToDevice);
 
-    // 4. fill 
-    int opOffset = 0, eligibleOffset = 0, succOffset = 0;
-    for (int j = 0; j < problem.numJobs; ++j) {
-        const auto& cpuJob = problem.jobs[j];
-        GPUJob& gpuJob = hostJobs[j];
-        gpuJob.id = cpuJob.id;
-        gpuJob.operationsOffset = opOffset;
-        gpuJob.operationCount = cpuJob.operations.size();
+    cudaMalloc(&d_ops, batch.operations.size() * sizeof(GPUOperation));
+    cudaMemcpy(d_ops, batch.operations.data(), batch.operations.size() * sizeof(GPUOperation), cudaMemcpyHostToDevice);
 
-        for (size_t o = 0; o < cpuJob.operations.size(); ++o) {
-            const auto& cpuOp = cpuJob.operations[o];
-            GPUOperation& gpuOp = allOps[opOffset];
-            gpuOp.type = cpuOp.type;
-            gpuOp.predecessorCount = cpuOp.predecessorCount;
-            gpuOp.lastPredecessorEndTime = cpuOp.lastPredecessorEndTime;
+    cudaMalloc(&d_eligible, batch.eligibleMachines.size() * sizeof(int));
+    cudaMemcpy(d_eligible, batch.eligibleMachines.data(), batch.eligibleMachines.size() * sizeof(int), cudaMemcpyHostToDevice);
 
-            gpuOp.eligibleMachinesOffset = eligibleOffset;
-            gpuOp.eligibleCount = cpuOp.eligibleMachines.size();
-            for (size_t em = 0; em < cpuOp.eligibleMachines.size(); ++em)
-                allEligible[eligibleOffset + em] = cpuOp.eligibleMachines[em];
-            eligibleOffset += cpuOp.eligibleMachines.size();
+    cudaMalloc(&d_succ, batch.successorsIDs.size() * sizeof(int));
+    cudaMemcpy(d_succ, batch.successorsIDs.data(), batch.successorsIDs.size() * sizeof(int), cudaMemcpyHostToDevice);
 
-            gpuOp.successorsOffset = succOffset;
-            gpuOp.successorCount = cpuOp.successorsIDs.size();
-            for (size_t s = 0; s < cpuOp.successorsIDs.size(); ++s)
-                allSuccessors[succOffset + s] = cpuOp.successorsIDs[s];
-            succOffset += cpuOp.successorsIDs.size();
+    cudaMalloc(&d_procTimes, batch.processingTimes.size() * sizeof(int));
+    cudaMemcpy(d_procTimes, batch.processingTimes.data(), batch.processingTimes.size() * sizeof(int), cudaMemcpyHostToDevice);
 
-            opOffset++;
-        }
+    // 3. Przygotuj GPUProblem z poprawnymi wskaźnikami
+    std::vector<GPUProblem> gpuProblems = batch.gpuProblems;
+    for (int i = 0; i < numProblems; ++i) {
+        gpuProblems[i].jobs = d_jobs + batch.jobsOffsets[i];
+        gpuProblems[i].operations = d_ops + batch.operationsOffsets[i];
+        gpuProblems[i].eligibleMachines = d_eligible + batch.eligibleOffsets[i];
+        gpuProblems[i].successorsIDs = d_succ + batch.successorsOffsets[i];
+        gpuProblems[i].processingTimes = d_procTimes + batch.processingTimesOffsets[i];
     }
 
-    // 5. cudaMalloc/cudaMemcpy
-    cudaMalloc(&gpuProblem.jobs, sizeof(GPUJob) * problem.numJobs);
-    cudaMemcpy(gpuProblem.jobs, hostJobs.data(), sizeof(GPUJob) * problem.numJobs, cudaMemcpyHostToDevice);
-
-    cudaMalloc(&gpuProblem.operations, sizeof(GPUOperation) * totalOps);
-    cudaMemcpy(gpuProblem.operations, allOps.data(), sizeof(GPUOperation) * totalOps, cudaMemcpyHostToDevice);
-
-    cudaMalloc(&gpuProblem.eligibleMachines, sizeof(int) * totalEligible);
-    cudaMemcpy(gpuProblem.eligibleMachines, allEligible.data(), sizeof(int) * totalEligible, cudaMemcpyHostToDevice);
-
-    cudaMalloc(&gpuProblem.successorsIDs, sizeof(int) * totalSuccessors);
-    cudaMemcpy(gpuProblem.successorsIDs, allSuccessors.data(), sizeof(int) * totalSuccessors, cudaMemcpyHostToDevice);
-
-    // 6. Processing times 
-    std::vector<int> flatTimes(problem.numOpTypes * problem.numMachines);
-    for(int o = 0; o < problem.numOpTypes; o++) {
-        for(int m = 0; m < problem.numMachines; m++) {
-            flatTimes[o * problem.numMachines + m] = problem.processingTimes[o][m];
-        }
-    }
-    cudaMalloc(&gpuProblem.processingTimes, sizeof(int) * flatTimes.size());
-    cudaMemcpy(gpuProblem.processingTimes, flatTimes.data(),
-               sizeof(int) * flatTimes.size(), cudaMemcpyHostToDevice);
-
-    return gpuProblem;
+    cudaMalloc(&d_gpuProblems, numProblems * sizeof(GPUProblem));
+    cudaMemcpy(d_gpuProblems, gpuProblems.data(), numProblems * sizeof(GPUProblem), cudaMemcpyHostToDevice);
 }
 
-GPUProblem JobShopDataGPU::UploadParallelToGPU(const JobShopData& problem) {
-    return UploadToGPU(problem);
-}
-
-void JobShopDataGPU::FreeGPUData(GPUProblem& gpuProblem) {
-    if(gpuProblem.jobs) cudaFree(gpuProblem.jobs);
-    if(gpuProblem.operations) cudaFree(gpuProblem.operations);
-    if(gpuProblem.eligibleMachines) cudaFree(gpuProblem.eligibleMachines);
-    if(gpuProblem.successorsIDs) cudaFree(gpuProblem.successorsIDs);
-    if(gpuProblem.processingTimes) cudaFree(gpuProblem.processingTimes);
-    gpuProblem = GPUProblem {};
+void JobShopDataGPU::FreeBatchGPUData(GPUProblem* d_gpuProblems, 
+                                      GPUJob* d_jobs, GPUOperation* d_ops, 
+                                      int* d_eligible, int* d_succ, int* d_procTimes) {
+    if(d_gpuProblems) cudaFree(d_gpuProblems);
+    if(d_jobs) cudaFree(d_jobs);
+    if(d_ops) cudaFree(d_ops);
+    if(d_eligible) cudaFree(d_eligible);
+    if(d_succ) cudaFree(d_succ);
+    if(d_procTimes) cudaFree(d_procTimes);
 }

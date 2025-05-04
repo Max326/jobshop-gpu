@@ -12,7 +12,7 @@
 
 #include "FileManager.h"
 
-/* CPU Implementation */
+
 
 struct Operation {
 	int type;
@@ -414,15 +414,37 @@ struct GPUProblem {
     int* successorsIDs;          // Device pointer 
     int* processingTimes;        // Flattened [opType][machine]
 };
-
+struct BatchJobShopGPUData {
+    std::vector<GPUJob> jobs;
+    std::vector<GPUOperation> operations;
+    std::vector<int> eligibleMachines;
+    std::vector<int> successorsIDs;
+    std::vector<int> processingTimes; 
+    std::vector<int> jobsOffsets;         // size: numProblems+1
+    std::vector<int> operationsOffsets;   // size: numProblems+1
+    std::vector<int> eligibleOffsets;     // size: numProblems+1
+    std::vector<int> successorsOffsets;   // size: numProblems+1
+    std::vector<int> processingTimesOffsets; // size: numProblems+1
+    std::vector<GPUProblem> gpuProblems;  
+    int numProblems = 0;
+};
 class JobShopDataGPU
 {
 public:
-	static void FreeGPUData(GPUProblem& gpuProblem);
-	// Upload CPU data to GPU
-	static GPUProblem UploadToGPU(const JobShopData& problem);
-	static GPUProblem UploadParallelToGPU(const JobShopData& problem);
+	static BatchJobShopGPUData PrepareBatchCPU(const std::vector<JobShopData>& problems);
+	static void UploadBatchToGPU(
+		BatchJobShopGPUData& batch,
+		GPUProblem*& d_gpuProblems,
+		GPUJob*& d_jobs,
+		GPUOperation*& d_ops,
+		int*& d_eligible,
+		int*& d_succ,
+		int*& d_procTimes,
+		int& numProblems);
 	// Free GPU memory
+	static void FreeBatchGPUData(GPUProblem* d_gpuProblems, 
+		GPUJob* d_jobs, GPUOperation* d_ops, 
+		int* d_eligible, int* d_succ, int* d_procTimes);
 	void DownloadFromGPU(GPUProblem& gpuProblem, JobShopData& cpuProblem);
 };
 #endif	// JOB_SHOP_DATA_CUH
