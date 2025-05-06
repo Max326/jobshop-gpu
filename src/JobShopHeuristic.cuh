@@ -22,83 +22,82 @@
 #define MAX_JOBS	 30
 #define MAX_OPS		 100
 
+// Structure for scheduled operation
 struct OperationSchedule {
-	int jobId;
-	int opType;
-	int startTime;
-	int endTime;
+    int jobId;
+    int opType;
+    int startTime;
+    int endTime;
 };
 
+// GPU solutions manager
 class SolutionManager
 {
 public:
-	struct GPUSolutions {
-		OperationSchedule* allSchedules;  // [machine][operation]
-		int* allScheduleCounts;			  // Operations per machine
-		int* allMakespans;
-		int numProblems;
-		int numMachines;
-		int maxOps;
-	};
+    struct GPUSolutions {
+        OperationSchedule* allSchedules;  // [machine][operation]
+        int* allScheduleCounts;			  // Operations per machine
+        int* allMakespans;
+        int numProblems;
+        int numMachines;
+        int maxOps;
+    };
 
-	static GPUSolutions CreateGPUSolutions(int numProblems, int numMachines, int maxOpsPerMachine);
-	static void FreeGPUSolutions(GPUSolutions& solution);
+    static GPUSolutions CreateGPUSolutions(int numProblems, int numMachines, int maxOpsPerMachine);
+    static void FreeGPUSolutions(GPUSolutions& solution);
 };
 
+// Heuristic solver for Job Shop
 class JobShopHeuristic
 {
 public:
-	struct CPUSolution {
-		std::vector<std::vector<OperationSchedule>> schedule;
-		int makespan = 0;
+    struct CPUSolution {
+        std::vector<std::vector<OperationSchedule>> schedule;
+        int makespan = 0;
 
-		void FromGPU(const SolutionManager::GPUSolutions& gpuSol, int problemId);
-		SolutionManager::GPUSolutions ToGPU() const;
-	};
+        void FromGPU(const SolutionManager::GPUSolutions& gpuSol, int problemId);
+        SolutionManager::GPUSolutions ToGPU() const;
+    };
 
-	CPUSolution Solve(const JobShopData& data);
+    CPUSolution Solve(const JobShopData& data);
 
-	// constructor with topology (creating new network)
-	JobShopHeuristic(const std::vector<int>& topology);
+    JobShopHeuristic(const std::vector<int>& topology);
+    JobShopHeuristic(const std::string& filename);
+    JobShopHeuristic(NeuralNetwork&& net);
 
-	// constructor with file (loading network from file)
-	JobShopHeuristic(const std::string& filename);
+    // GPU Interface
+    struct SolverConfig {
+        int maxThreadsPerBlock = 256;
+        int maxOperationsPerMachine = 100;
+    };
 
-	JobShopHeuristic(NeuralNetwork&& net);
+    void SolveBatch(const GPUProblem* problems,
+                    SolutionManager::GPUSolutions* solutions,
+                    int numProblems);
 
-	// GPU Interface
-	struct SolverConfig {
-		int maxThreadsPerBlock = 256;
-		int maxOperationsPerMachine = 100;
-	};
-
-	void SolveBatch(const GPUProblem* problems,
-					SolutionManager::GPUSolutions* solutions,
-					int numProblems);
-
-	void PrintSchedule(const CPUSolution& solution, JobShopData data);
+    void PrintSchedule(const CPUSolution& solution, JobShopData data);
 
 public:
-	NeuralNetwork neuralNetwork;
+    NeuralNetwork neuralNetwork;
 
 private:
-	static NeuralNetwork InitializeNetworkFromFile(const std::string& filename);
+    static NeuralNetwork InitializeNetworkFromFile(const std::string& filename);
 
-	std::vector<float> ExtractFeatures(const JobShopData& data,
-									   const Job& job,
-									   const int& operationType,
-									   const int& machineId,
-									   const int& startTime,
-									   const int& machineAvailableTime) const;
+    std::vector<float> ExtractFeatures(const JobShopData& data,
+                                       const Job& job,
+                                       const int& operationType,
+                                       const int& machineId,
+                                       const int& startTime,
+                                       const int& machineAvailableTime) const;
 
-	void UpdateSchedule(JobShopData& data, int jobId, int operationId, int machineId, CPUSolution& solution);
+    void UpdateSchedule(JobShopData& data, int jobId, int operationId, int machineId, CPUSolution& solution);
 };
 
 __global__ void SolveFJSSPKernel(
-	const GPUProblem* problems,
-	const NeuralNetwork::DeviceEvaluator nn_eval,
-	SolutionManager::GPUSolutions* solutions,
-	int total_problems);
+    const GPUProblem* problems,
+    const NeuralNetwork::DeviceEvaluator nn_eval,
+    SolutionManager::GPUSolutions* solutions,
+    int total_problems);
 
 __device__ void PrintProblemDetails(const GPUProblem& problem);
 

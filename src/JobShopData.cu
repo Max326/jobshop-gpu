@@ -1,20 +1,19 @@
 #include <cuda_runtime.h>
-
 #include "JobShopData.cuh"
 
+// Prepare batch data on CPU for GPU upload
 BatchJobShopGPUData JobShopDataGPU::PrepareBatchCPU(const std::vector<JobShopData>& problems) {
     BatchJobShopGPUData batch;
     batch.numProblems = problems.size();
 
-    int jobsOffset = 0, opsOffset = 0, eligibleOffset = 0, succOffset = 0, procTimesOffset = 0;
+    // Initialize offsets
+    batch.jobsOffsets.push_back(0);
+    batch.operationsOffsets.push_back(0);
+    batch.eligibleOffsets.push_back(0);
+    batch.successorsOffsets.push_back(0);
+    batch.processingTimesOffsets.push_back(0);
 
     for (const auto& problem : problems) {
-        batch.jobsOffsets.push_back(batch.jobs.size());
-        batch.operationsOffsets.push_back(batch.operations.size());
-        batch.eligibleOffsets.push_back(batch.eligibleMachines.size());
-        batch.successorsOffsets.push_back(batch.successorsIDs.size());
-        batch.processingTimesOffsets.push_back(batch.processingTimes.size());
-
         // Jobs
         for (const auto& job : problem.jobs) {
             GPUJob gpuJob;
@@ -41,17 +40,23 @@ BatchJobShopGPUData JobShopDataGPU::PrepareBatchCPU(const std::vector<JobShopDat
             }
         }
 
-        // Processing times (spłaszczone)
+        // Processing times (flattened)
         for (const auto& row : problem.processingTimes)
             for (int t : row)
                 batch.processingTimes.push_back(t);
 
-        // GPUProblem z offsetami (nie wskaźnikami!)
+        // Offsets for this problem
+        batch.jobsOffsets.push_back(batch.jobs.size());
+        batch.operationsOffsets.push_back(batch.operations.size());
+        batch.eligibleOffsets.push_back(batch.eligibleMachines.size());
+        batch.successorsOffsets.push_back(batch.successorsIDs.size());
+        batch.processingTimesOffsets.push_back(batch.processingTimes.size());
+
+        // GPUProblem struct (pointers set later)
         GPUProblem gpuProblem;
         gpuProblem.numMachines = problem.numMachines;
         gpuProblem.numJobs = problem.numJobs;
         gpuProblem.numOpTypes = problem.numOpTypes;
-        // Wskaźniki ustaw na nullptr, offsety będą używane po stronie GPU
         gpuProblem.jobs = nullptr;
         gpuProblem.operations = nullptr;
         gpuProblem.eligibleMachines = nullptr;
@@ -60,15 +65,10 @@ BatchJobShopGPUData JobShopDataGPU::PrepareBatchCPU(const std::vector<JobShopDat
         batch.gpuProblems.push_back(gpuProblem);
     }
 
-    // Dodaj końcowe offsety
-    batch.jobsOffsets.push_back(batch.jobs.size());
-    batch.operationsOffsets.push_back(batch.operations.size());
-    batch.eligibleOffsets.push_back(batch.eligibleMachines.size());
-    batch.successorsOffsets.push_back(batch.successorsIDs.size());
-    batch.processingTimesOffsets.push_back(batch.processingTimes.size());
-
     return batch;
 }
+
+// Upload batch data to GPU
 void JobShopDataGPU::UploadBatchToGPU(
     BatchJobShopGPUData& batch,
     GPUProblem*& d_gpuProblems,
@@ -81,7 +81,7 @@ void JobShopDataGPU::UploadBatchToGPU(
 {
     numProblems = batch.numProblems;
 
-    // calculate offsets
+    // Make offsets local for each problem
     for (int i = 0; i < numProblems; ++i) {
         int opBase = batch.operationsOffsets[i];
         int eligibleBase = batch.eligibleOffsets[i];
@@ -96,7 +96,7 @@ void JobShopDataGPU::UploadBatchToGPU(
         }
     }
 
-    // copy to GPU
+    // Copy data to GPU
     cudaMalloc(&d_jobs, batch.jobs.size() * sizeof(GPUJob));
     cudaMemcpy(d_jobs, batch.jobs.data(), batch.jobs.size() * sizeof(GPUJob), cudaMemcpyHostToDevice);
 
@@ -112,7 +112,7 @@ void JobShopDataGPU::UploadBatchToGPU(
     cudaMalloc(&d_procTimes, batch.processingTimes.size() * sizeof(int));
     cudaMemcpy(d_procTimes, batch.processingTimes.data(), batch.processingTimes.size() * sizeof(int), cudaMemcpyHostToDevice);
 
-    // 3. Prepare GPUProblem
+    // Prepare GPUProblem with device pointers
     std::vector<GPUProblem> gpuProblems = batch.gpuProblems;
     for (int i = 0; i < numProblems; ++i) {
         gpuProblems[i].jobs = d_jobs + batch.jobsOffsets[i];
@@ -126,8 +126,9 @@ void JobShopDataGPU::UploadBatchToGPU(
     cudaMemcpy(d_gpuProblems, gpuProblems.data(), numProblems * sizeof(GPUProblem), cudaMemcpyHostToDevice);
 }
 
-void JobShopDataGPU::FreeBatchGPUData(GPUProblem* d_gpuProblems, 
-                                      GPUJob* d_jobs, GPUOperation* d_ops, 
+// Free GPU memory
+void JobShopDataGPU::FreeBatchGPUData(GPUProblem* d_gpuProblems,
+                                      GPUJob* d_jobs, GPUOperation* d_ops,
                                       int* d_eligible, int* d_succ, int* d_procTimes) {
     if(d_gpuProblems) cudaFree(d_gpuProblems);
     if(d_jobs) cudaFree(d_jobs);
@@ -135,4 +136,9 @@ void JobShopDataGPU::FreeBatchGPUData(GPUProblem* d_gpuProblems,
     if(d_eligible) cudaFree(d_eligible);
     if(d_succ) cudaFree(d_succ);
     if(d_procTimes) cudaFree(d_procTimes);
+}
+
+// Download from GPU (not implemented)
+void JobShopDataGPU::DownloadFromGPU(GPUProblem&, JobShopData&) {
+    // Not implemented
 }
