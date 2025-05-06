@@ -248,3 +248,22 @@ void NeuralNetwork::FlattenParams() {
 							   layer.begin(), layer.end());
 	}
 }
+
+std::vector<NeuralNetwork> NeuralNetwork::LoadBatchFromJson(const std::string& filename) {
+    std::string full_path = FileManager::GetFullPath(filename);
+    std::ifstream in(full_path);
+    if(!in) throw std::runtime_error("Cannot open weights file: " + full_path);
+
+    nlohmann::json all_nets;
+    in >> all_nets;
+    in.close();
+
+    std::vector<NeuralNetwork> networks;
+    for(const auto& j : all_nets) {
+        std::vector<int> topology = j["topology"].get<std::vector<int>>();
+        std::vector<std::vector<float>> weights = j["weights"].get<std::vector<std::vector<float>>>();
+        std::vector<std::vector<float>> biases = j["biases"].get<std::vector<std::vector<float>>>();
+        networks.emplace_back(topology, &weights, &biases);
+    }
+    return networks;
+}

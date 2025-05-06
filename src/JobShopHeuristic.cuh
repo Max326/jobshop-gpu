@@ -74,6 +74,12 @@ public:
     void SolveBatch(const GPUProblem* problems,
                     SolutionManager::GPUSolutions* solutions,
                     int numProblems);
+	static void SolveBatchNew(
+		const GPUProblem* problems,
+		const NeuralNetwork::DeviceEvaluator* evaluators,
+		float* results,
+		int numProblems,
+		int numWeights);
 
     void PrintSchedule(const CPUSolution& solution, JobShopData data);
 
@@ -98,6 +104,12 @@ __global__ void SolveFJSSPKernel(
     const NeuralNetwork::DeviceEvaluator nn_eval,
     SolutionManager::GPUSolutions* solutions,
     int total_problems);
+
+__global__ void SolveManyWeightsKernel(
+    const GPUProblem* problems,
+    const NeuralNetwork::DeviceEvaluator* evaluators,
+    float* results,
+    int numProblems);
 
 __device__ void PrintProblemDetails(const GPUProblem& problem);
 

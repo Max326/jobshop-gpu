@@ -11,7 +11,8 @@ float MeasureKernelTime(const std::function<void()>& kernelLaunch);
 int main() {
     srand(time(0));
 
-    const int numProblems = 9600;
+    const int numProblems = 64;
+    const int numWeights = 192;
     const std::vector<int> topology = {4, 32, 16, 1};
 
     try {
@@ -19,9 +20,17 @@ int main() {
         std::vector<JobShopData> all_problems = JobShopData::LoadFromParallelJson("test_10k.json", numProblems);
 
         // 2. Load neural network
-        NeuralNetwork nn;
-        nn.LoadFromJson("weights_and_biases");
+        std::vector<NeuralNetwork> networks = NeuralNetwork::LoadBatchFromJson("weights_and_biases_192.json");
+        std::vector<NeuralNetwork::DeviceEvaluator> evaluators;
 
+        for (auto& net : networks) {
+            evaluators.push_back(net.GetDeviceEvaluator());
+        }
+
+        NeuralNetwork::DeviceEvaluator* d_evaluators = nullptr;
+        cudaMalloc(&d_evaluators, sizeof(NeuralNetwork::DeviceEvaluator) * numWeights);
+        cudaMemcpy(d_evaluators, evaluators.data(), sizeof(NeuralNetwork::DeviceEvaluator) * numWeights, cudaMemcpyHostToDevice);
+        
         // 3. Prepare batch and upload to GPU
         auto batch = JobShopDataGPU::PrepareBatchCPU(all_problems);
 
@@ -36,35 +45,32 @@ int main() {
         JobShopDataGPU::UploadBatchToGPU(
             batch, d_problems, d_jobs, d_ops, d_eligible, d_succ, d_procTimes, numProblemsGPU);
 
-        // 4. Allocate GPU memory for solutions
-        auto solutions_batch = SolutionManager::CreateGPUSolutions(numProblems, all_problems[0].numMachines, 100);
+        // Allocate memory        
+        float* d_results = nullptr;
+        cudaMalloc(&d_results, sizeof(float) * numWeights);
 
-        // 5. Create heuristic solver
-        JobShopHeuristic heuristic(std::move(nn));
-
-        // 6. Solve on GPU and measure time
         float kernelMs = MeasureKernelTime([&]{
-            heuristic.SolveBatch(d_problems, &solutions_batch, numProblems);
+            JobShopHeuristic::SolveBatchNew(
+                d_problems, d_evaluators, d_results, numProblems, numWeights
+                );
         });
         std::cout << "Kernel execution time: " << kernelMs << " ms" << std::endl;
+ 
+
 
         cudaError_t kernelErr = cudaGetLastError();
         if(kernelErr != cudaSuccess) {
             std::cerr << "Kernel error: " << cudaGetErrorString(kernelErr) << "\n";
         }
 
-        // 7. Download results from GPU
-        std::vector<JobShopHeuristic::CPUSolution> solutions(numProblems);
-        for(int i = 0; i < numProblems; ++i) {
-            solutions[i].FromGPU(solutions_batch, i);
+        cudaMemcpy(results.data(), d_results, sizeof(float) * numWeights, cudaMemcpyDeviceToHost);
+        for(int i = 0; i < numWeights; ++i) {
+            std::cout << "Avg makespan for weights set " << i << ": " << results[i] << std::endl;
         }
 
-        // 8. Print schedule for the first problem
-        heuristic.PrintSchedule(solutions[0], all_problems[0]);
-
-        // 9. Clean up GPU memory
-        SolutionManager::FreeGPUSolutions(solutions_batch);
         JobShopDataGPU::FreeBatchGPUData(d_problems, d_jobs, d_ops, d_eligible, d_succ, d_procTimes);
+        cudaFree(d_evaluators);
+        cudaFree(d_results);
 
     } catch(const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

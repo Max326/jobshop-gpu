@@ -42,6 +42,8 @@ public:
 	~NeuralNetwork();
 
 	std::vector<float> Forward(const std::vector<float>& input);
+	static std::vector<NeuralNetwork> LoadBatchFromJson(const std::string& filename);
+
 
 	void SaveToJson(const std::string& filename) const {
 		FileManager::EnsureDataDirExists();

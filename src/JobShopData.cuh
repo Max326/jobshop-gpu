@@ -11,6 +11,7 @@
 #include <vector>
 #include <map>
 #include <algorithm>
+#include <chrono>
 
 #include "FileManager.h"
 
@@ -146,92 +147,112 @@ public:
 
     // Load multiple instances from a JSON array file
     static std::vector<JobShopData> LoadFromParallelJson(const std::string& filename, int numInstances) {
-        std::vector<JobShopData> result;
-        std::string full_path = FileManager::GetFullPath(filename);
-        std::ifstream in(full_path);
-        if(!in) throw std::runtime_error("Failed to open file: " + full_path);
-
-        nlohmann::json j_array;
-        try {
-            in >> j_array;
-        } catch(nlohmann::json::parse_error& e) {
-            throw std::runtime_error("Failed to parse JSON: " + std::string(e.what()));
-        }
-
-        if(!j_array.is_array())
-            throw std::runtime_error("JSON root is not an array as expected.");
-        if(j_array.size() < numInstances)
-            throw std::runtime_error("Not enough instances in file.");
-
-        for(int i = 0; i < numInstances; ++i) {
-            JobShopData data;
-            const auto& j = j_array[i];
-            data.numMachines = j["numM"].get<int>();
-            data.numJobs = j["numJ"].get<int>();
-            data.numOpTypes = j["numO"].get<int>();
-
-            data.jobs.clear();
-            const auto& jsonJobs = j["Jobs"];
-            const auto& jsonPrec = j["Prec"];
-
-            std::map<std::vector<std::pair<int, int>>, int> opTypeMap;
-            int currentType = 0;
-
-            for(size_t jobIdx = 0; jobIdx < jsonJobs.size(); ++jobIdx) {
-                Job job;
-                job.id = jobIdx;
-                const auto& jsonOperations = jsonJobs[jobIdx];
-                for(const auto& jsonOp: jsonOperations) {
-                    Operation op;
-                    std::vector<std::pair<int, int>> machineTimes;
-                    for(const auto& mt: jsonOp) {
-                        int time = mt[0].get<int>();
-                        int machine = mt[1].get<int>();
-                        op.eligibleMachines.push_back(machine);
-                        machineTimes.emplace_back(machine, time);
-                    }
-                    std::sort(machineTimes.begin(), machineTimes.end());
-                    auto it = opTypeMap.find(machineTimes);
-                    if(it == opTypeMap.end()) {
-                        opTypeMap[machineTimes] = currentType;
-                        op.type = currentType++;
-                    } else {
-                        op.type = it->second;
-                    }
-                    job.operations.push_back(op);
-                }
-                data.jobs.push_back(job);
-            }
-
-            data.processingTimes.assign(currentType, std::vector<int>(data.numMachines, -1));
-            for(const auto& pair_type: opTypeMap) {
-                const auto& mtPairs = pair_type.first;
-                int type_id = pair_type.second;
-                for(const auto& pair_machine_time: mtPairs) {
-                    int machine = pair_machine_time.first;
-                    int time = pair_machine_time.second;
-                    data.processingTimes[type_id][machine] = time;
-                }
-            }
-
-            for(size_t jobIdx = 0; jobIdx < jsonPrec.size(); ++jobIdx) {
-                auto& job = data.jobs[jobIdx];
-                const auto& jobPrec = jsonPrec[jobIdx];
-                for(size_t opIdx = 0; opIdx < jobPrec.size(); ++opIdx) {
-                    auto& op = job.operations[opIdx];
-                    const auto& predecessors = jobPrec[opIdx];
-                    op.predecessorCount = predecessors.size();
-                    for(int predIdx: predecessors) {
-                        job.operations[predIdx].successorsIDs.push_back(opIdx);
-                    }
-                }
-            }
-            data.numOpTypes = currentType;
-            data.BuildMachineEligibleOperations();
-            result.push_back(std::move(data));
-        }
-        return result;
-    }
+		using clock = std::chrono::high_resolution_clock;
+		std::vector<JobShopData> result;
+		std::string full_path = FileManager::GetFullPath(filename);
+	
+		// Efficient file read
+		auto t_file_start = clock::now();
+		std::ifstream in(full_path, std::ios::binary | std::ios::ate);
+		if(!in) throw std::runtime_error("Failed to open file: " + full_path);
+		size_t size = in.tellg();
+		in.seekg(0);
+		std::string buffer(size, '\0');
+		in.read(buffer.data(), size);
+		auto t_file_end = clock::now();
+		std::cout << "[DIAG] File read: "
+				  << std::chrono::duration_cast<std::chrono::milliseconds>(t_file_end - t_file_start).count()
+				  << " ms\n";
+	
+		// Parse from memory
+		auto t_parse_start = clock::now();
+		nlohmann::json j_array = nlohmann::json::parse(buffer);
+		auto t_parse_end = clock::now();
+		std::cout << "[DIAG] JSON parse: "
+				  << std::chrono::duration_cast<std::chrono::milliseconds>(t_parse_end - t_parse_start).count()
+				  << " ms\n";
+	
+		if(!j_array.is_array())
+			throw std::runtime_error("JSON root is not an array as expected.");
+		if(j_array.size() < numInstances)
+			throw std::runtime_error("Not enough instances in file.");
+	
+		// Convert JSON to JobShopData
+		auto t_conv_start = clock::now();
+		for(int i = 0; i < numInstances; ++i) {
+			JobShopData data;
+			const auto& j = j_array[i];
+			data.numMachines = j["numM"].get<int>();
+			data.numJobs = j["numJ"].get<int>();
+			data.numOpTypes = j["numO"].get<int>();
+	
+			data.jobs.clear();
+			const auto& jsonJobs = j["Jobs"];
+			const auto& jsonPrec = j["Prec"];
+	
+			std::map<std::vector<std::pair<int, int>>, int> opTypeMap;
+			int currentType = 0;
+	
+			for(size_t jobIdx = 0; jobIdx < jsonJobs.size(); ++jobIdx) {
+				Job job;
+				job.id = jobIdx;
+				const auto& jsonOperations = jsonJobs[jobIdx];
+				for(const auto& jsonOp: jsonOperations) {
+					Operation op;
+					std::vector<std::pair<int, int>> machineTimes;
+					for(const auto& mt: jsonOp) {
+						int time = mt[0].get<int>();
+						int machine = mt[1].get<int>();
+						op.eligibleMachines.push_back(machine);
+						machineTimes.emplace_back(machine, time);
+					}
+					std::sort(machineTimes.begin(), machineTimes.end());
+					auto it = opTypeMap.find(machineTimes);
+					if(it == opTypeMap.end()) {
+						opTypeMap[machineTimes] = currentType;
+						op.type = currentType++;
+					} else {
+						op.type = it->second;
+					}
+					job.operations.push_back(op);
+				}
+				data.jobs.push_back(job);
+			}
+	
+			data.processingTimes.assign(currentType, std::vector<int>(data.numMachines, -1));
+			for(const auto& pair_type: opTypeMap) {
+				const auto& mtPairs = pair_type.first;
+				int type_id = pair_type.second;
+				for(const auto& pair_machine_time: mtPairs) {
+					int machine = pair_machine_time.first;
+					int time = pair_machine_time.second;
+					data.processingTimes[type_id][machine] = time;
+				}
+			}
+	
+			for(size_t jobIdx = 0; jobIdx < jsonPrec.size(); ++jobIdx) {
+				auto& job = data.jobs[jobIdx];
+				const auto& jobPrec = jsonPrec[jobIdx];
+				for(size_t opIdx = 0; opIdx < jobPrec.size(); ++opIdx) {
+					auto& op = job.operations[opIdx];
+					const auto& predecessors = jobPrec[opIdx];
+					op.predecessorCount = predecessors.size();
+					for(int predIdx: predecessors) {
+						job.operations[predIdx].successorsIDs.push_back(opIdx);
+					}
+				}
+			}
+			data.numOpTypes = currentType;
+			data.BuildMachineEligibleOperations();
+			result.push_back(std::move(data));
+		}
+		auto t_conv_end = clock::now();
+		std::cout << "[DIAG] JobShopData conversion: "
+				  << std::chrono::duration_cast<std::chrono::milliseconds>(t_conv_end - t_conv_start).count()
+				  << " ms\n";
+	
+		return result;
+	}
 
     // Build machineEligibleOperations from jobs/operations
     void BuildMachineEligibleOperations() {
