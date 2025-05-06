@@ -9,18 +9,22 @@
 int main() {
     srand(time(0));
 
-    const int numProblems = 50;
+    const int numProblems = 100;
     std::vector<JobShopData> all_problems;
     const std::vector<int> topology = {4, 32, 16, 1};
 
     try {
-        // 1. Load problem data
-        for (int i = 0; i < numProblems; ++i) {
-            JobShopData data;
-            data.LoadFromParallelJson("test_100.json", i);
-            all_problems.push_back(std::move(data));
+        nlohmann::json j_array;
+        {
+            std::ifstream in(FileManager::GetFullPath("test_100.json"));
+            if(!in) throw std::runtime_error("Failed to open file: test_100.json");
+            in >> j_array;
+            if(!j_array.is_array()) throw std::runtime_error("JSON root is not an array!");
+            if(j_array.size() < numProblems) throw std::runtime_error("Not enough problems in file!");
         }
-
+    
+        
+        std::vector<JobShopData> all_problems = JobShopData::LoadFromParallelJson("test_100.json", numProblems);
         // 2. Load neural network
         NeuralNetwork nn;
         nn.LoadFromJson("weights_and_biases");

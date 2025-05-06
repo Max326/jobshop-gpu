@@ -147,155 +147,92 @@ public:
 		}
 	}
 
-	void LoadFromParallelJson(const std::string& filename, int instanceIndex = 0) {	 // Added instanceIndex parameter
+
+	static std::vector<JobShopData> LoadFromParallelJson(const std::string& filename, int numInstances) {
+		std::vector<JobShopData> result;
 		std::string full_path = FileManager::GetFullPath(filename);
 		std::ifstream in(full_path);
 		if(!in) throw std::runtime_error("Failed to open file: " + full_path);
 
-		nlohmann::json j_array;	 // Parse the whole file content
+		nlohmann::json j_array;
 		try {
 			in >> j_array;
 		} catch(nlohmann::json::parse_error& e) {
 			throw std::runtime_error("Failed to parse JSON: " + std::string(e.what()));
 		}
 
-		// --- FIX START ---
-		// Check if the parsed JSON is an array and if the requested index is valid
-		if(!j_array.is_array()) {
+		if(!j_array.is_array())
 			throw std::runtime_error("JSON root is not an array as expected.");
-		}
-		if(j_array.empty()) {
-			throw std::runtime_error("JSON array is empty, no instances to load.");
-		}
-		if(instanceIndex < 0 || instanceIndex >= j_array.size()) {
-			throw std::runtime_error("Invalid instance index requested: " + std::to_string(instanceIndex));
-		}
+		if(j_array.size() < numInstances)
+			throw std::runtime_error("Not enough instances in file.");
 
-		// Select the specific instance object from the array
-		const auto& j = j_array[instanceIndex];
-		// --- FIX END ---
+		for(int i = 0; i < numInstances; ++i) {
+			JobShopData data;
+			const auto& j = j_array[i];
+			data.numMachines = j["numM"].get<int>();
+			data.numJobs = j["numJ"].get<int>();
+			data.numOpTypes = j["numO"].get<int>();
 
-		// Ensure the selected element is an object
-		if(!j.is_object()) {
-			throw std::runtime_error("Selected element at index " + std::to_string(instanceIndex) + " is not a JSON object.");
-		}
+			data.jobs.clear();
+			const auto& jsonJobs = j["Jobs"];
+			const auto& jsonPrec = j["Prec"];
 
-		// 1. Parse basic metadata from the selected instance object
-		numMachines = j["numM"].get<int>();
-		numJobs = j["numJ"].get<int>();
-		// numOpTypes from the file isn't strictly needed as the code calculates
-		// the actual number of unique types later based on machine-time pairs.
-		// We read it, but 'currentType' will determine the processingTimes size.
-		numOpTypes = j["numO"].get<int>();
+			std::map<std::vector<std::pair<int, int>>, int> opTypeMap;
+			int currentType = 0;
 
-		// 2. Parse jobs and their operations
-		jobs.clear();
-		const auto& jsonJobs = j["Jobs"];
-		const auto& jsonPrec = j["Prec"];  // Precedence constraints
-
-		// Validate that the number of jobs in the data matches numJobs metadata
-		if(jsonJobs.size() != numJobs) {
-			throw std::runtime_error("Mismatch: numJ (" + std::to_string(numJobs) + ") != actual number of jobs found (" + std::to_string(jsonJobs.size()) + ")");
-		}
-		if(jsonPrec.size() != numJobs) {
-			throw std::runtime_error("Mismatch: numJ (" + std::to_string(numJobs) + ") != actual number of precedence entries found (" + std::to_string(jsonPrec.size()) + ")");
-		}
-
-		// Map to track unique operation types (machine-time combinations)
-		std::map<std::vector<std::pair<int, int>>, int> opTypeMap;
-		int currentType = 0;  // This will count the actual unique operation types found
-
-		for(size_t jobIdx = 0; jobIdx < jsonJobs.size(); ++jobIdx) {
-			Job job;
-			job.id = jobIdx;  // Assign job ID based on its position
-
-			const auto& jsonOperations = jsonJobs[jobIdx];
-			for(const auto& jsonOp: jsonOperations) {
-				Operation op;
-				std::vector<std::pair<int, int>> machineTimes;
-
-				// Parse eligible machines and processing times
-				for(const auto& mt: jsonOp) {
-					// JSON format is [time, machine]
-					int time = mt[0].get<int>();
-					int machine = mt[1].get<int>();
-					// Validate machine index
-					if(machine < 0 || machine >= numMachines) {
-						throw std::runtime_error("Invalid machine index " + std::to_string(machine) + " for job " + std::to_string(jobIdx));
+			for(size_t jobIdx = 0; jobIdx < jsonJobs.size(); ++jobIdx) {
+				Job job;
+				job.id = jobIdx;
+				const auto& jsonOperations = jsonJobs[jobIdx];
+				for(const auto& jsonOp: jsonOperations) {
+					Operation op;
+					std::vector<std::pair<int, int>> machineTimes;
+					for(const auto& mt: jsonOp) {
+						int time = mt[0].get<int>();
+						int machine = mt[1].get<int>();
+						op.eligibleMachines.push_back(machine);
+						machineTimes.emplace_back(machine, time);
 					}
-					op.eligibleMachines.push_back(machine);
-					machineTimes.emplace_back(machine, time);  // Store as (machine, time) for sorting/mapping
-				}
-
-				if(machineTimes.empty()) {
-					throw std::runtime_error("Operation with no machine options found for job " + std::to_string(jobIdx));
-				}
-
-				// Create unique operation type based on machine-time pairs
-				std::sort(machineTimes.begin(), machineTimes.end());  // Sort by machine index first
-				auto it = opTypeMap.find(machineTimes);
-				if(it == opTypeMap.end()) {
-					opTypeMap[machineTimes] = currentType;
-					op.type = currentType++;
-				} else {
-					op.type = it->second;
-				}
-
-				job.operations.push_back(op);
-			}
-
-			// Store the job first to get correct operation indices for precedence processing later
-			jobs.push_back(job);
-		}
-
-		// 3. Initialize processing times matrix based on discovered types
-		processingTimes.assign(currentType, std::vector<int>(numMachines, -1));	 // Use -1 or another indicator for infeasible
-		for(const auto& pair_type: opTypeMap) {
-			const auto& mtPairs = pair_type.first;	// The sorted vector of (machine, time) pairs
-			int type_id = pair_type.second;			// The assigned unique type ID
-			for(const auto& pair_machine_time: mtPairs) {
-				int machine = pair_machine_time.first;
-				int time = pair_machine_time.second;
-				processingTimes[type_id][machine] = time;
-			}
-		}
-
-		// 4. Parse precedence constraints
-		for(size_t jobIdx = 0; jobIdx < jsonPrec.size(); ++jobIdx) {
-			auto& job = jobs[jobIdx];  // Get the already created job
-			const auto& jobPrec = jsonPrec[jobIdx];
-
-			// Validate that precedence array size matches the number of operations for the job
-			if(jobPrec.size() != job.operations.size()) {
-				throw std::runtime_error("Mismatch in precedence array size for job " + std::to_string(jobIdx) +
-										 ": expected " + std::to_string(job.operations.size()) +
-										 ", got " + std::to_string(jobPrec.size()));
-			}
-
-			for(size_t opIdx = 0; opIdx < jobPrec.size(); ++opIdx) {
-				auto& op = job.operations[opIdx];			// Reference to the current operation
-				const auto& predecessors = jobPrec[opIdx];	// Array of predecessor indices
-
-				// Set predecessors for current operation
-				op.predecessorCount = predecessors.size();
-
-				// Update successors of predecessors
-				for(int predIdx: predecessors) {
-					// Validate predecessor index
-					if(predIdx < 0 || predIdx >= job.operations.size()) {
-						throw std::runtime_error("Invalid predecessor index " + std::to_string(predIdx) + " for operation " +
-												 std::to_string(opIdx) + " in job " + std::to_string(jobIdx));
+					std::sort(machineTimes.begin(), machineTimes.end());
+					auto it = opTypeMap.find(machineTimes);
+					if(it == opTypeMap.end()) {
+						opTypeMap[machineTimes] = currentType;
+						op.type = currentType++;
+					} else {
+						op.type = it->second;
 					}
-					job.operations[predIdx].successorsIDs.push_back(opIdx);
+					job.operations.push_back(op);
+				}
+				data.jobs.push_back(job);
+			}
+
+			data.processingTimes.assign(currentType, std::vector<int>(data.numMachines, -1));
+			for(const auto& pair_type: opTypeMap) {
+				const auto& mtPairs = pair_type.first;
+				int type_id = pair_type.second;
+				for(const auto& pair_machine_time: mtPairs) {
+					int machine = pair_machine_time.first;
+					int time = pair_machine_time.second;
+					data.processingTimes[type_id][machine] = time;
 				}
 			}
-		}
-		numOpTypes = currentType;
 
-		// Optional: Call your validation function if it exists
-		// if(!Validate()) {
-		// 	throw std::runtime_error("Loaded data failed validation");
-		// }
+			for(size_t jobIdx = 0; jobIdx < jsonPrec.size(); ++jobIdx) {
+				auto& job = data.jobs[jobIdx];
+				const auto& jobPrec = jsonPrec[jobIdx];
+				for(size_t opIdx = 0; opIdx < jobPrec.size(); ++opIdx) {
+					auto& op = job.operations[opIdx];
+					const auto& predecessors = jobPrec[opIdx];
+					op.predecessorCount = predecessors.size();
+					for(int predIdx: predecessors) {
+						job.operations[predIdx].successorsIDs.push_back(opIdx);
+					}
+				}
+			}
+			data.numOpTypes = currentType;
+			result.push_back(std::move(data));
+		}
+		return result;
 	}
 
 	bool Validate() const {

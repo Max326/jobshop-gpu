@@ -81,7 +81,7 @@ void JobShopDataGPU::UploadBatchToGPU(
 {
     numProblems = batch.numProblems;
 
-    // 1. Przelicz offsety na lokalne w batch.jobs i batch.operations (CPU)
+    // calculate offsets
     for (int i = 0; i < numProblems; ++i) {
         int opBase = batch.operationsOffsets[i];
         int eligibleBase = batch.eligibleOffsets[i];
@@ -96,7 +96,7 @@ void JobShopDataGPU::UploadBatchToGPU(
         }
     }
 
-    // 2. Teraz kopiuj na GPU
+    // copy to GPU
     cudaMalloc(&d_jobs, batch.jobs.size() * sizeof(GPUJob));
     cudaMemcpy(d_jobs, batch.jobs.data(), batch.jobs.size() * sizeof(GPUJob), cudaMemcpyHostToDevice);
 
@@ -112,7 +112,7 @@ void JobShopDataGPU::UploadBatchToGPU(
     cudaMalloc(&d_procTimes, batch.processingTimes.size() * sizeof(int));
     cudaMemcpy(d_procTimes, batch.processingTimes.data(), batch.processingTimes.size() * sizeof(int), cudaMemcpyHostToDevice);
 
-    // 3. Przygotuj GPUProblem z poprawnymi wskaźnikami
+    // 3. Prepare GPUProblem
     std::vector<GPUProblem> gpuProblems = batch.gpuProblems;
     for (int i = 0; i < numProblems; ++i) {
         gpuProblems[i].jobs = d_jobs + batch.jobsOffsets[i];
