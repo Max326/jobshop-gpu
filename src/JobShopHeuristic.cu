@@ -124,18 +124,21 @@ void JobShopHeuristic::SolveBatch(
 void JobShopHeuristic::SolveBatchNew(
     const GPUProblem* problems,
     const NeuralNetwork::DeviceEvaluator* evaluators,
+    GPUOperation* ops_working,
     float* results,
     int numProblems,
-    int numWeights)
+    int numWeights,
+    int maxOpsPerProblem 
+)
 {
-    int threads = 64; // lub numProblems, jeśli <= 64
+    int threads = 64;
     int blocks = numWeights;
     size_t sharedMemSize = threads * sizeof(float);
 
-    cudaDeviceSetLimit(cudaLimitStackSize, 4096);  // Before kernel launch
+    cudaDeviceSetLimit(cudaLimitStackSize, 4096);
 
     SolveManyWeightsKernel<<<blocks, threads, sharedMemSize>>>(
-        problems, evaluators, results, numProblems
+        problems, evaluators, ops_working, results, numProblems, maxOpsPerProblem
     );
     cudaDeviceSynchronize();
 }
@@ -353,13 +356,16 @@ __global__ void SolveFJSSPKernel(
 __global__ void SolveManyWeightsKernel(
     const GPUProblem* problems,
     const NeuralNetwork::DeviceEvaluator* evaluators,
+    GPUOperation* ops_working,
     float* results,
-    int numProblems)
+    int numProblems,
+    int maxOpsPerProblem
+)
 {
     extern __shared__ float shared_makespans[];
 
-    int weightSet = blockIdx.x;      // Zestaw wag (blok)
-    int problemIdx = threadIdx.x;    // Problem (wątek)
+    int weightSet = blockIdx.x;     
+    int problemIdx = threadIdx.x; 
 
     float makespan = 0.0f;
 
@@ -367,18 +373,17 @@ __global__ void SolveManyWeightsKernel(
         const GPUProblem problem = problems[problemIdx];
         const NeuralNetwork::DeviceEvaluator& nn_eval = evaluators[weightSet];
 
-        int machine_times[MAX_MACHINES] = {0};
-        int scheduledOps = 0;
-        int local_makespan = 0;
+        int base = (weightSet * numProblems + problemIdx) * maxOpsPerProblem;
+        GPUOperation* local_ops = &ops_working[base];
 
-		int totalOps = 0;
-		for(int j = 0; j < problem.numJobs; ++j) {
-			totalOps += problem.jobs[j].operationCount;
-		}
-		GPUOperation local_ops[MAX_JOBS * MAX_OPS];
-		for(int i = 0; i < totalOps; ++i) {
-			local_ops[i] = problem.operations[i];
-		}
+        int totalOps = 0;
+        for(int j = 0; j < problem.numJobs; ++j)
+            totalOps += problem.jobs[j].operationCount;
+
+        int machine_times[MAX_MACHINES] = {0};
+        int local_makespan = 0;
+        int scheduledOps = 0;
+
         bool scheduled_any;
         do {
             scheduled_any = false;
@@ -446,6 +451,7 @@ __global__ void SolveManyWeightsKernel(
 
         makespan = static_cast<float>(local_makespan);
         shared_makespans[problemIdx] = makespan;
+		
     } else {
         shared_makespans[problemIdx] = 0.0f;
     }
@@ -456,6 +462,7 @@ __global__ void SolveManyWeightsKernel(
         float sum = 0.0f;
         for(int i = 0; i < numProblems; ++i) sum += shared_makespans[i];
         results[weightSet] = sum / numProblems;
+
     }
 }
 
