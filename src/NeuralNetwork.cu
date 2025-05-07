@@ -152,65 +152,74 @@ __device__ float ScaleTanh2(float x) {
 }
 
 __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features) const {
-	const int MAX_LAYER_SIZE = 32;	// Match your header definition
-	float activations[MAX_LAYER_SIZE];
+	
+    const int MAX_LAYER_SIZE = 32;	
+    float activations[MAX_LAYER_SIZE]; // This is fine on registers/stack for this size
 
-	// 1. Validate input size
-	if(topology[0] > MAX_LAYER_SIZE) return 0.0f;
+    // 1. Validate input size using d_topology
+    if(this->num_layers == 0 || this->d_topology[0] > MAX_LAYER_SIZE || this->d_topology[0] <= 0) {
+        return 0.0f; 
+    }
 
-	// 2. Copy input with bounds checking
-	for(int i = 0; i < topology[0] && i < MAX_LAYER_SIZE; i++) {
-		activations[i] = features[i];
-	}
+    // 2. Copy input with bounds checking
+    for(int i = 0; i < this->d_topology[0]; i++) { // Assuming MAX_LAYER_SIZE check is sufficient
+        activations[i] = features[i];
+    }
 
-	int weight_offset = 0;
-	int bias_offset = 0;
-	int total_weights = 0;
-	int total_biases = 0;
+    int weight_offset = 0;
+    int bias_offset = 0;
+    
+    // Calculate total_weights and total_biases 
+    int total_weights_for_eval = 0;
+    int total_biases_for_eval = 0;
+    for(int i = 1; i < this->num_layers; i++) {
+        total_weights_for_eval += this->d_topology[i - 1] * this->d_topology[i];
+        total_biases_for_eval += this->d_topology[i];
+    }
 
-	// 3. Pre-calculate total weights/biases for bounds checking
-	for(int i = 1; i < num_layers; i++) {
-		total_weights += topology[i - 1] * topology[i];
-		total_biases += topology[i];
-	}
 
-	for(int layer = 1; layer < num_layers; layer++) {
-		int in_size = topology[layer - 1];
-		int out_size = topology[layer];
+    for(int layer = 1; layer < this->num_layers; layer++) {
+        int in_size = this->d_topology[layer - 1];
+        int out_size = this->d_topology[layer];
 
-		// 4. Validate layer dimensions
-		if(out_size > MAX_LAYER_SIZE) return 0.0f;
+        // 4. Validate layer dimensions
+        if(out_size > MAX_LAYER_SIZE || out_size <= 0 || in_size <= 0) {
+            // printf("Evaluate Error: Invalid layer dimensions. Layer %d, in_size %d, out_size %d\n", layer, in_size, out_size);
+            return 0.0f; 
+        }
 
-		for(int neuron = 0; neuron < out_size; neuron++) {
-			// 5. Check bias access
-			if(bias_offset + neuron >= total_biases) {
-				printf("Bias access out of bounds: %d >= %d\n",
-					   bias_offset + neuron, total_biases);
-				return 0.0f;
-			}
+        for(int neuron = 0; neuron < out_size; neuron++) {
+            // 5. Check bias access
+            if(bias_offset + neuron >= total_biases_for_eval) {
+                // printf("Bias access out of bounds: %d >= %d\n", bias_offset + neuron, total_biases_for_eval);
+                return 0.0f; // Critical error
+            }
+            float sum = this->biases[bias_offset + neuron];
 
-			float sum = biases[bias_offset + neuron];
+            for(int i = 0; i < in_size; i++) {
+                // 6. Check weight access
+                int weight_idx = weight_offset + neuron * in_size + i; // Correct indexing for weights[output_neuron][input_neuron]
+                if(weight_idx >= total_weights_for_eval) {
+                    // printf("Weight access out of bounds: %d >= %d\n", weight_idx, total_weights_for_eval);
+                    return 0.0f; // Critical error
+                }
+                sum += activations[i] * this->weights[weight_idx];
+            }
+            
+            activations[neuron] = ScaleTanh2(sum); 
+        }
 
-			for(int i = 0; i < in_size; i++) {
-				// 6. Check weight access
-				int weight_idx = weight_offset + neuron * in_size + i;
-				if(weight_idx >= total_weights) {
-					printf("Weight access out of bounds: %d >= %d\n",
-						   weight_idx, total_weights);
-					return 0.0f;
-				}
+        weight_offset += in_size * out_size;
+        bias_offset += out_size;
+    }
 
-				sum += activations[i] * weights[weight_idx];
-			}
+    // The final output is in activations[0] assuming the last layer has 1 neuron.
+    if (this->d_topology[this->num_layers - 1] == 1) {
+        return activations[0];
+    } else {
 
-			activations[neuron] = ScaleTanh2(sum);
-		}
-
-		weight_offset += in_size * out_size;
-		bias_offset += out_size;
-	}
-
-	return activations[0];
+        return 0.0f; // Or activations[0]
+    }
 }
 
 void NeuralNetwork::GenerateWeights() {

@@ -23,6 +23,8 @@
 
 #include "FileManager.h"
 
+#define MAX_NN_LAYERS 4 
+
 class NeuralNetwork
 {
 public:
@@ -87,28 +89,37 @@ public:
 
 	void FlattenParams();
 
-	struct DeviceEvaluator {
-		const float* weights;  // Flattened weights
-		const float* biases;
-		const int* topology;
-		int num_layers;
+    struct DeviceEvaluator {
+        const float* weights;  // Flattened weights on device
+        const float* biases;   // Flattened biases on device
+        int d_topology[MAX_NN_LAYERS]; // Embedded topology array
+        int num_layers;
 
-		__device__ float Evaluate(const float* features) const;
-	};
+        __device__ float Evaluate(const float* features) const;
+    };
 
-	// Prepares evaluator for GPU
-	__host__ DeviceEvaluator GetDeviceEvaluator() const {
-		if(!cudaData || !cudaData->d_weights || !cudaData->d_biases) {
-			throw std::runtime_error("CUDA data not initialized");
-		}
+    __host__ DeviceEvaluator GetDeviceEvaluator() const {
+        if(!cudaData || !cudaData->d_weights || !cudaData->d_biases) {
+            throw std::runtime_error("CUDA data not initialized for GetDeviceEvaluator");
+        }
+        if (topology.size() > MAX_NN_LAYERS) {
+            throw std::runtime_error("Network topology exceeds MAX_NN_LAYERS defined in DeviceEvaluator.");
+        }
 
-		return {
-			cudaData->d_weights,
-			cudaData->d_biases,
-			topology.data(),
-			(int)topology.size()};
-	}
-
+        DeviceEvaluator eval;
+        eval.weights = cudaData->d_weights;
+        eval.biases = cudaData->d_biases;
+        
+        for (size_t i = 0; i < topology.size(); ++i) {
+            eval.d_topology[i] = topology[i];
+        }
+        // Pad remaining elements if topology.size() < MAX_NN_LAYERS
+        for (size_t i = topology.size(); i < MAX_NN_LAYERS; ++i) {
+            eval.d_topology[i] = 0; 
+        }
+        eval.num_layers = static_cast<int>(topology.size());
+        return eval;
+    }
 #define CUDA_CHECK(call)                                                                                \
 	{                                                                                                   \
 		cudaError_t err = (call);                                                                       \
