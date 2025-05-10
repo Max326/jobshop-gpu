@@ -353,7 +353,7 @@ __global__ void SolveFJSSPKernel(
         scheduledOps++;
     }
 }
-__global__ void SolveManyWeightsKernel(
+__global__ void __launch_bounds__(64, 15) SolveManyWeightsKernel(
     const GPUProblem* problems,
     const NeuralNetwork::DeviceEvaluator* evaluators,
     GPUOperation* ops_working,
@@ -367,17 +367,21 @@ __global__ void SolveManyWeightsKernel(
     int weightSet = blockIdx.x;     
     int problemIdx = threadIdx.x; 
 
+
     float makespan = 0.0f;
 
     if(problemIdx < numProblems) {
         const GPUProblem problem = problems[problemIdx];
         const NeuralNetwork::DeviceEvaluator& nn_eval = evaluators[weightSet];
 
+        const int numJobs = problem.numJobs;
+        const int numMachines = problem.numMachines;
+
         int base = (weightSet * numProblems + problemIdx) * maxOpsPerProblem;
         GPUOperation* local_ops = &ops_working[base];
 
         int totalOps = 0;
-        for(int j = 0; j < problem.numJobs; ++j)
+        for(int j = 0; j < numJobs; ++j)
             totalOps += problem.jobs[j].operationCount;
 
         int machine_times[MAX_MACHINES] = {0};
@@ -391,7 +395,7 @@ __global__ void SolveManyWeightsKernel(
             int bestJobID = -1, bestOpID = -1, bestMachineID = -1;
             int bestStartTime = 0;
 
-            for(int jobID = 0; jobID < problem.numJobs; ++jobID) {
+            for(int jobID = 0; jobID < numJobs; ++jobID) {
                 const GPUJob& job = problem.jobs[jobID];
                 for(int operationID = 0; operationID < job.operationCount; ++operationID) {
                     GPUOperation& operation = local_ops[job.operationsOffset + operationID];
@@ -400,7 +404,7 @@ __global__ void SolveManyWeightsKernel(
                     for(int m = 0; m < operation.eligibleCount; m++) {
                         int machineID = problem.eligibleMachines[operation.eligibleMachinesOffset + m];
                         int start_time = max(machine_times[machineID], operation.lastPredecessorEndTime);
-                        int opMach_idx = operation.type * problem.numMachines + machineID;
+                        int opMach_idx = operation.type * numMachines + machineID;
                         int pTime = problem.processingTimes[opMach_idx];
 
                         float features[4] = {
@@ -427,7 +431,7 @@ __global__ void SolveManyWeightsKernel(
 
             GPUJob job = problem.jobs[bestJobID];
             GPUOperation& bestOperation = local_ops[job.operationsOffset + bestOpID];
-            int opMach_idx = bestOperation.type * problem.numMachines + bestMachineID;
+            int opMach_idx = bestOperation.type * numMachines + bestMachineID;
             int pTime = problem.processingTimes[opMach_idx];
 
             int endTime = bestStartTime + pTime;

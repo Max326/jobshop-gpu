@@ -11,7 +11,7 @@ float MeasureKernelTime(const std::function<void()>& kernelLaunch);
 int main() {
     srand(time(0));
 
-    const int numProblems = 64;
+    const int numProblems = 50;
     const int numWeights = 192;
     const std::vector<int> topology = {4, 32, 16, 1};
 
