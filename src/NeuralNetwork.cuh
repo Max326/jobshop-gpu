@@ -157,15 +157,19 @@ private:
 private:
 	void InitializeCudaData();
 
-	void Validate() const {
+	void Validate(bool talk = false) const {
 		if(topology.empty()) {
 			throw std::invalid_argument("NeuralNetwork: Topology cannot be empty");
 		}
 
-		std::cout << "=== DATA VALIDATION ===\n";
-		std::cout << "Topology: ";
-		for(auto t: topology)
-			std::cout << t << " ";
+		if (talk){
+			std::cout << "=== DATA VALIDATION ===\n";
+			std::cout << "Topology: ";
+			for(auto t: topology)
+				std::cout << t << " ";
+		}
+
+
 		// std::cout << "\nFirst weight layer: " << weights[0][0] << ", " << weights[0][1] << "...\n";
 		// std::cout << "First bias: " << biases[0][0] << "\n";
 	};

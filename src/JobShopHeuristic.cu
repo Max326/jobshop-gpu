@@ -378,9 +378,9 @@ __global__ void SolveManyWeightsKernel(
 		int base = (weightSet * numProblems + problemIdx) * maxOpsPerProblem;
 		GPUOperation* local_ops = &ops_working[base];
 
-		int totalOps = 0;
-		for(int j = 0; j < numJobs; ++j)
-			totalOps += problem.jobs[j].operationCount;
+		// int totalOps = 0;
+		// for(int j = 0; j < numJobs; ++j)
+		// 	totalOps += problem.jobs[j].operationCount;
 
 		int machine_times[MAX_MACHINES] = {0};
 		int local_makespan = 0;
@@ -394,7 +394,11 @@ __global__ void SolveManyWeightsKernel(
 			int bestStartTime = 0;
 
 			for(int jobID = 0; jobID < numJobs; ++jobID) {
-				const GPUJob& job = problem.jobs[jobID];
+				GPUJob& job = problem.jobs[jobID];
+				
+				// this doesn't work and modifies the problem i think
+				// if (job.operationsScheduled == job.operationCount) continue;
+
 				for(int operationID = 0; operationID < job.operationCount; ++operationID) {
 					GPUOperation& operation = local_ops[job.operationsOffset + operationID];
 					if(operation.predecessorCount != 0) continue;
@@ -405,14 +409,17 @@ __global__ void SolveManyWeightsKernel(
 						int opMach_idx = operation.type * numMachines + machineID;
 						int pTime = problem.processingTimes[opMach_idx];
 
-						float features[4 + MAX_MACHINES] = {
+						float features[4 + MAX_MACHINES + MAX_OPS] = {
 							static_cast<float>(pTime),
 							static_cast<float>(start_time - machine_times[machineID]),
 							static_cast<float>(4.0),
-							static_cast<float>(job.operationCount),
+							static_cast<float>(job.operationCount), // TODO encode for all jobs - maybe fill vector at the start, and then reduce when op is chosen
+							// TODO: encode one hot for all operations left
 						};
 
                         features[4 + machineID] = 1.0f; // one hot machine encoding
+
+						features[4 + MAX_MACHINES + operationID] = 1.0f; // one hot operation encoding
 						
                         float score = nn_eval.Evaluate(features);
 
@@ -429,12 +436,15 @@ __global__ void SolveManyWeightsKernel(
 
 			if(bestJobID == -1) break;
 
-			GPUJob job = problem.jobs[bestJobID];
+			GPUJob& job = problem.jobs[bestJobID];
 			GPUOperation& bestOperation = local_ops[job.operationsOffset + bestOpID];
 			int opMach_idx = bestOperation.type * numMachines + bestMachineID;
 			int pTime = problem.processingTimes[opMach_idx];
 
 			int endTime = bestStartTime + pTime;
+
+			// job.operationsScheduled++; // nope
+
 
 			bestOperation.predecessorCount = -1;
 
