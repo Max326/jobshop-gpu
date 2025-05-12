@@ -353,121 +353,121 @@ __global__ void SolveFJSSPKernel(
         scheduledOps++;
     }
 }
+
 __global__ void SolveManyWeightsKernel(
-    const GPUProblem* problems,
-    const NeuralNetwork::DeviceEvaluator* evaluators,
-    GPUOperation* ops_working,
-    float* results,
-    int numProblems,
-    int maxOpsPerProblem
-)
-{
-    extern __shared__ float shared_makespans[];
+	const GPUProblem* problems,
+	const NeuralNetwork::DeviceEvaluator* evaluators,
+	GPUOperation* ops_working,
+	float* results,
+	int numProblems,
+	int maxOpsPerProblem) {
+	extern __shared__ float shared_makespans[];
 
-    int weightSet = blockIdx.x;     
-    int problemIdx = threadIdx.x; 
+	int weightSet = blockIdx.x;
+	int problemIdx = threadIdx.x;
 
+	float makespan = 0.0f;
 
-    float makespan = 0.0f;
+	if(problemIdx < numProblems) {
+		const GPUProblem problem = problems[problemIdx];
+		const NeuralNetwork::DeviceEvaluator& nn_eval = evaluators[weightSet];
 
-    if(problemIdx < numProblems) {
-        const GPUProblem problem = problems[problemIdx];
-        const NeuralNetwork::DeviceEvaluator& nn_eval = evaluators[weightSet];
+		const int numJobs = problem.numJobs;
+		const int numMachines = problem.numMachines;
 
-        const int numJobs = problem.numJobs;
-        const int numMachines = problem.numMachines;
+		int base = (weightSet * numProblems + problemIdx) * maxOpsPerProblem;
+		GPUOperation* local_ops = &ops_working[base];
 
-        int base = (weightSet * numProblems + problemIdx) * maxOpsPerProblem;
-        GPUOperation* local_ops = &ops_working[base];
+		int totalOps = 0;
+		for(int j = 0; j < numJobs; ++j)
+			totalOps += problem.jobs[j].operationCount;
 
-        int totalOps = 0;
-        for(int j = 0; j < numJobs; ++j)
-            totalOps += problem.jobs[j].operationCount;
+		int machine_times[MAX_MACHINES] = {0};
+		int local_makespan = 0;
+		int scheduledOps = 0;
 
-        int machine_times[MAX_MACHINES] = {0};
-        int local_makespan = 0;
-        int scheduledOps = 0;
+		bool scheduled_any;
+		do {
+			scheduled_any = false;
+			float bestScoreValue = -FLT_MAX;
+			int bestJobID = -1, bestOpID = -1, bestMachineID = -1;
+			int bestStartTime = 0;
 
-        bool scheduled_any;
-        do {
-            scheduled_any = false;
-            float bestScoreValue = -FLT_MAX;
-            int bestJobID = -1, bestOpID = -1, bestMachineID = -1;
-            int bestStartTime = 0;
+			for(int jobID = 0; jobID < numJobs; ++jobID) {
+				const GPUJob& job = problem.jobs[jobID];
+				for(int operationID = 0; operationID < job.operationCount; ++operationID) {
+					GPUOperation& operation = local_ops[job.operationsOffset + operationID];
+					if(operation.predecessorCount != 0) continue;
 
-            for(int jobID = 0; jobID < numJobs; ++jobID) {
-                const GPUJob& job = problem.jobs[jobID];
-                for(int operationID = 0; operationID < job.operationCount; ++operationID) {
-                    GPUOperation& operation = local_ops[job.operationsOffset + operationID];
-                    if (operation.predecessorCount != 0) continue;
+					for(int m = 0; m < operation.eligibleCount; m++) {
+						int machineID = problem.eligibleMachines[operation.eligibleMachinesOffset + m];
+						int start_time = max(machine_times[machineID], operation.lastPredecessorEndTime);
+						int opMach_idx = operation.type * numMachines + machineID;
+						int pTime = problem.processingTimes[opMach_idx];
 
-                    for(int m = 0; m < operation.eligibleCount; m++) {
-                        int machineID = problem.eligibleMachines[operation.eligibleMachinesOffset + m];
-                        int start_time = max(machine_times[machineID], operation.lastPredecessorEndTime);
-                        int opMach_idx = operation.type * numMachines + machineID;
-                        int pTime = problem.processingTimes[opMach_idx];
+						float features[4 + MAX_MACHINES] = {
+							static_cast<float>(pTime),
+							static_cast<float>(start_time - machine_times[machineID]),
+							static_cast<float>(4.0),
+							static_cast<float>(job.operationCount),
+						};
 
-                        float features[4] = {
-                            static_cast<float>(pTime),
-                            static_cast<float>(start_time - machine_times[machineID]),
-                            static_cast<float>(4.0),
-                            static_cast<float>(job.operationCount)
-                        };
-
+                        features[4 + machineID] = 1.0f; // one hot machine encoding
+						
                         float score = nn_eval.Evaluate(features);
 
-                        if(score > bestScoreValue) {
-                            bestScoreValue = score;
-                            bestJobID = jobID;
-                            bestOpID = operationID;
-                            bestMachineID = machineID;
-                            bestStartTime = start_time;
-                        }
-                    }
-                }
-            }
+						if(score > bestScoreValue) {
+							bestScoreValue = score;
+							bestJobID = jobID;
+							bestOpID = operationID;
+							bestMachineID = machineID;
+							bestStartTime = start_time;
+						}
+					}
+				}
+			}
 
-            if(bestJobID == -1) break;
+			if(bestJobID == -1) break;
 
-            GPUJob job = problem.jobs[bestJobID];
-            GPUOperation& bestOperation = local_ops[job.operationsOffset + bestOpID];
-            int opMach_idx = bestOperation.type * numMachines + bestMachineID;
-            int pTime = problem.processingTimes[opMach_idx];
+			GPUJob job = problem.jobs[bestJobID];
+			GPUOperation& bestOperation = local_ops[job.operationsOffset + bestOpID];
+			int opMach_idx = bestOperation.type * numMachines + bestMachineID;
+			int pTime = problem.processingTimes[opMach_idx];
 
-            int endTime = bestStartTime + pTime;
+			int endTime = bestStartTime + pTime;
 
-            bestOperation.predecessorCount = -1;
+			bestOperation.predecessorCount = -1;
 
-            for (int s = 0; s < bestOperation.successorCount; ++s) {
-                int successorID = problem.successorsIDs[bestOperation.successorsOffset + s];
-                GPUOperation& successorOperation = local_ops[job.operationsOffset + successorID];
-                successorOperation.predecessorCount -= 1;
-                successorOperation.lastPredecessorEndTime =
-                    max(successorOperation.lastPredecessorEndTime, endTime);
-            }
+			for(int s = 0; s < bestOperation.successorCount; ++s) {
+				int successorID = problem.successorsIDs[bestOperation.successorsOffset + s];
+				GPUOperation& successorOperation = local_ops[job.operationsOffset + successorID];
+				successorOperation.predecessorCount -= 1;
+				successorOperation.lastPredecessorEndTime =
+					max(successorOperation.lastPredecessorEndTime, endTime);
+			}
 
-            machine_times[bestMachineID] = endTime;
-            if(endTime > local_makespan) local_makespan = endTime;
+			machine_times[bestMachineID] = endTime;
+			if(endTime > local_makespan) local_makespan = endTime;
 
-            scheduledOps++;
-            scheduled_any = true;
-        } while(scheduled_any);
+			scheduledOps++;
+			scheduled_any = true;
+		} while(scheduled_any);
 
-        makespan = static_cast<float>(local_makespan);
-        shared_makespans[problemIdx] = makespan;
-		
-    } else {
-        shared_makespans[problemIdx] = 0.0f;
-    }
-    __syncthreads();
+		makespan = static_cast<float>(local_makespan);
+		shared_makespans[problemIdx] = makespan;
 
-    // Redukcja: średnia makespanów w bloku
-    if(threadIdx.x == 0) {
-        float sum = 0.0f;
-        for(int i = 0; i < numProblems; ++i) sum += shared_makespans[i];
-        results[weightSet] = sum / numProblems;
+	} else {
+		shared_makespans[problemIdx] = 0.0f;
+	}
+	__syncthreads();
 
-    }
+	// Redukcja: średnia makespanów w bloku
+	if(threadIdx.x == 0) {
+		float sum = 0.0f;
+		for(int i = 0; i < numProblems; ++i)
+			sum += shared_makespans[i];
+		results[weightSet] = sum / numProblems;
+	}
 }
 
 // Print problem details from device (for debugging)
