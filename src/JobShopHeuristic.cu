@@ -353,7 +353,7 @@ __global__ void SolveFJSSPKernel(
         scheduledOps++;
     }
 }
-__global__ void __launch_bounds__(64, 15) SolveManyWeightsKernel(
+__global__ void SolveManyWeightsKernel(
     const GPUProblem* problems,
     const NeuralNetwork::DeviceEvaluator* evaluators,
     GPUOperation* ops_working,
