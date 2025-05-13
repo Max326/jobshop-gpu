@@ -294,7 +294,6 @@ struct GPUJob {
     int id;
     int operationsOffset; // Offset in operations array
     int operationCount;
-    int operationsScheduled = 0;
 };
 
 // GPU-side problem structure

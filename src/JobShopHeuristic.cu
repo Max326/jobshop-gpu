@@ -382,6 +382,8 @@ __global__ void SolveManyWeightsKernel(
 		// for(int j = 0; j < numJobs; ++j)
 		// 	totalOps += problem.jobs[j].operationCount;
 
+		int jobScheduledOps[MAX_JOBS] = {0};
+
 		int machine_times[MAX_MACHINES] = {0};
 		int local_makespan = 0;
 		int scheduledOps = 0;
@@ -394,10 +396,10 @@ __global__ void SolveManyWeightsKernel(
 			int bestStartTime = 0;
 
 			for(int jobID = 0; jobID < numJobs; ++jobID) {
+				if(jobScheduledOps[jobID] == problem.jobs[jobID].operationCount) 
+					continue;
+
 				GPUJob& job = problem.jobs[jobID];
-				
-				// this doesn't work and modifies the problem i think
-				// if (job.operationsScheduled == job.operationCount) continue;
 
 				for(int operationID = 0; operationID < job.operationCount; ++operationID) {
 					GPUOperation& operation = local_ops[job.operationsOffset + operationID];
@@ -443,8 +445,7 @@ __global__ void SolveManyWeightsKernel(
 
 			int endTime = bestStartTime + pTime;
 
-			// job.operationsScheduled++; // nope
-
+            jobScheduledOps[bestJobID]++;
 
 			bestOperation.predecessorCount = -1;
 
