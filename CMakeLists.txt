@@ -22,6 +22,18 @@ file(GLOB_RECURSE HEADER_SOURCES
     src/*.cuh
 )
 
+include_directories("/usr/include/eigen3")
+include_directories("${CMAKE_SOURCE_DIR}/libcmaes/include")
+include_directories("${CMAKE_SOURCE_DIR}/libcmaes/include/libcmaes")
+
+link_directories(${CMAKE_SOURCE_DIR}/libcmaes/src/.libs/ )
+
+find_package(OpenMP)
+if (OPENMP_FOUND)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+endif()
 
 # Main executable
 add_executable(JobShopScheduler 
@@ -46,7 +58,7 @@ FetchContent_Declare(
     GIT_TAG v3.11.2
 )
 FetchContent_MakeAvailable(json)
-target_link_libraries(JobShopScheduler PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(JobShopScheduler PRIVATE nlohmann_json::nlohmann_json libcmaes.a)
 
 # Data files
 file(COPY ${CMAKE_SOURCE_DIR}/data DESTINATION ${CMAKE_BINARY_DIR})
