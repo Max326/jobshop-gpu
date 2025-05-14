@@ -380,20 +380,24 @@ __global__ void SolveManyWeightsKernel(
 
 		// int totalOps = 0;
 		// for(int j = 0; j < numJobs; ++j)
-		// 	totalOps += problem.jobs[j].operationCount;
+		// totalOps += problem.jobs[j].operationCount;
 
 		int jobScheduledOps[MAX_JOBS] = {0};
 		int machine_times[MAX_MACHINES] = {0};
 
-        int jobTypeCounts[MAX_JOBS][MAX_OP_TYPES]; // Private to thread
+        int opTypeCount[MAX_OP_TYPES] = {0};
         
+        int opTypePerJobCount[MAX_JOBS][MAX_OP_TYPES]; // Private to thread
+        
+        // TODO: Optimize operations on these tables
         // Initialize per-job type counts
         for(int jobID = 0; jobID < numJobs; ++jobID) {
             const GPUJob& job = problem.jobs[jobID];
 
             for(int opID = 0; opID < job.operationCount; ++opID) {
                 GPUOperation& op = local_ops[job.operationsOffset + opID];
-                jobTypeCounts[jobID][op.type]++; // TODO use this for features
+                opTypePerJobCount[jobID][op.type]++; // TODO use this for features
+                opTypeCount[op.type]++;
             }
         }
 
@@ -424,26 +428,47 @@ __global__ void SolveManyWeightsKernel(
 						int pTime = problem.processingTimes[opMach_idx];
                         
                         // testing + envelope + one hot machine + one hot operation type
-						float features[4 + MAX_MACHINES + MAX_MACHINES + MAX_OP_TYPES] = {
-							// TODO: envelope
-							static_cast<float>(pTime),
+						float features[1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES] = {
+							// TODO: one hot job type encoding
 							static_cast<float>(start_time - machine_times[machineID]), //* wasted time
-							static_cast<float>(4.0),
-							static_cast<float>(job.operationCount - jobScheduledOps[jobID]), //* remaining operations
-                            // TODO encode for all jobs - maybe fill vector at the start, and then reduce when op is chosen
+
+							// static_cast<float>(job.operationCount - jobScheduledOps[jobID]), //* remaining operations
+
+                            /* previous features
+							static_cast<float>(pTime),
+                            static_cast<float>(start_time - machine_times[machineID]), //* wasted time
+                            static_cast<float>(4.0),
+                            static_cast<float>(job.operationCount)
+                            */
 						};
 
                         //* envelope start
-                        for (int i = 4; i < MAX_MACHINES + 4; ++i) {
-                            features[i] = static_cast<float>(local_makespan - machine_times[i - 4]);
+                        for (int i = 1; i < MAX_MACHINES + 1; ++i) {
+                            features[i] = static_cast<float>(local_makespan - machine_times[i - 1]);
                         }
-                        features[4 + machineID] = static_cast<float>(local_makespan - (start_time + pTime));
+                        features[1 + machineID] = static_cast<float>(local_makespan - (start_time + pTime));
                         //* envelope end
 
-                        features[4 + MAX_MACHINES + machineID] = 1.0f; // one hot machine encoding
+                        features[1 + MAX_MACHINES + machineID] = 1.0f; // one hot machine encoding
 
-						features[4 + 2 * MAX_MACHINES + operation.type] = 1.0f; // one hot operation type encoding
-						
+						features[1 + 2 * MAX_MACHINES + operation.type] = 1.0f; // one hot operation type encoding
+
+                        //* total number of operations left (of each type) - start
+                        int start = 1 + 2* MAX_MACHINES + MAX_OP_TYPES;
+                        for (int i = start; i < start + MAX_OP_TYPES; i++){
+                            features[i] = static_cast<float>(opTypeCount[i]);
+                        }
+                        --features[start + operation.type]; // because we score for the operation as if it was processed
+                        //* total number of operations left (of each type) - end
+
+                        //* job's operations left (of each type) - start
+                        int nextStart = 1 + 2* MAX_MACHINES + 2 * MAX_OP_TYPES;
+                        for (int i = nextStart; i < nextStart + MAX_OP_TYPES; i++){
+                            features[i] = static_cast<float>(opTypePerJobCount[jobID][i]);
+                        }
+                        --features[nextStart + operation.type]; // because we score for the operation as if it was processed
+                        //* job's operations left (of each type) - end
+
                         float score = nn_eval.Evaluate(features);
 
 						if(score > bestScoreValue) {
@@ -467,7 +492,8 @@ __global__ void SolveManyWeightsKernel(
 			int endTime = bestStartTime + pTime;
 
             jobScheduledOps[bestJobID]++;
-            jobTypeCounts[bestJobID][bestOperation.type]--;
+            opTypePerJobCount[bestJobID][bestOperation.type]--;
+            opTypeCount[bestOperation.type]--;
 
 			bestOperation.predecessorCount = -1;
 
