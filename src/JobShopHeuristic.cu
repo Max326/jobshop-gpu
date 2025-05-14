@@ -396,7 +396,7 @@ __global__ void SolveManyWeightsKernel(
 
             for(int opID = 0; opID < job.operationCount; ++opID) {
                 GPUOperation& op = local_ops[job.operationsOffset + opID];
-                opTypePerJobCount[jobID][op.type]++; // TODO use this for features
+                opTypePerJobCount[jobID][op.type]++;
                 opTypeCount[op.type]++;
             }
         }
@@ -428,10 +428,11 @@ __global__ void SolveManyWeightsKernel(
 						int pTime = problem.processingTimes[opMach_idx];
                         
                         // testing + envelope + one hot machine + one hot operation type
-						float features[1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES] = {
-							// TODO: one hot job type encoding
-							static_cast<float>(start_time - machine_times[machineID]), //* wasted time
+                        float features[1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES] = {0.0f};
 
+						features[0] = static_cast<float>(start_time) - machine_times[machineID]; //* wasted time
+							// TODO: one hot job type encoding
+							
 							// static_cast<float>(job.operationCount - jobScheduledOps[jobID]), //* remaining operations
 
                             /* previous features
@@ -440,7 +441,7 @@ __global__ void SolveManyWeightsKernel(
                             static_cast<float>(4.0),
                             static_cast<float>(job.operationCount)
                             */
-						};
+						// };
 
                         //* envelope start
                         for (int i = 1; i < MAX_MACHINES + 1; ++i) {
