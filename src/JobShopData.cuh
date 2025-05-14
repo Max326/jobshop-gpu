@@ -26,7 +26,7 @@ struct Operation {
 
 // Host-side job structure
 struct Job {
-    int id;
+    int type;
     std::vector<Operation> operations;   // Ordered list of operations
     int nextOpIndex = 0;                 // Next operation to schedule
     int lastOpEndTime = 0;               // End time of last operation
@@ -52,98 +52,6 @@ public:
     std::pair<int, int> opCountPerJobRange;
     std::pair<int, int> opFlexibilityRange;
 
-    // Save data to JSON file
-    void SaveToJson(const std::string& filename) const {
-        FileManager::EnsureDataDirExists();
-        std::string full_path = FileManager::GetFullPath(filename);
-
-        json j;
-        j["numMachines"] = numMachines;
-        j["numJobs"] = numJobs;
-        j["numOpTypes"] = numOpTypes;
-
-        j["jobs"] = json::array();
-        for(const auto& job: jobs) {
-            json jobJson;
-            jobJson["id"] = job.id;
-            jobJson["nextOpIndex"] = job.nextOpIndex;
-            jobJson["lastOpEndTime"] = job.lastOpEndTime;
-
-            json operationsJson = json::array();
-            for(const auto& op: job.operations) {
-                json opJson;
-                opJson["type"] = op.type;
-                opJson["eligibleMachines"] = op.eligibleMachines;
-                operationsJson.push_back(opJson);
-            }
-            jobJson["operations"] = operationsJson;
-
-            j["jobs"].push_back(jobJson);
-        }
-
-        j["processingTimes"] = processingTimes;
-
-        std::ofstream out(full_path);
-    	if(!out) {
-            throw std::runtime_error("Failed to open file for writing: " + full_path);
-        }
-        out << j.dump(4);
-        std::cout << "Data saved to: " << std::filesystem::absolute(full_path) << std::endl;
-    }
-
-    // Load data from JSON file (single instance)
-    void LoadFromJson(const std::string& filename) {
-        std::string full_path = FileManager::GetFullPath(filename);
-
-        std::ifstream in(full_path);
-        if(!in) {
-            throw std::runtime_error("Failed to open file: " + full_path);
-        }
-
-        json j;
-        try {
-            in >> j;
-        } catch(const json::parse_error& e) {
-            throw std::runtime_error("JSON parse error: " + std::string(e.what()));
-        }
-
-        try {
-            numMachines = j.at("numMachines").get<int>();
-            numJobs = j.at("numJobs").get<int>();
-            numOpTypes = j.at("numOpTypes").get<int>();
-
-            jobs.clear();
-            for(const auto& item: j.at("jobs")) {
-                Job job;
-                job.id = item.at("id").get<int>();
-                job.nextOpIndex = item.value("nextOpIndex", 0);
-                job.lastOpEndTime = item.value("lastOpEndTime", 0);
-
-                auto operationsJson = item.at("operations");
-                for(size_t opIdx = 0; opIdx < operationsJson.size(); opIdx++) {
-                    Operation op;
-                    op.type = operationsJson[opIdx].at("type").get<int>();
-                    op.eligibleMachines = operationsJson[opIdx].at("eligibleMachines").get<std::vector<int>>();
-                    op.predecessorCount = (opIdx == 0) ? 0 : 1;
-                    if(opIdx < operationsJson.size() - 1) {
-                        op.successorsIDs.push_back(opIdx + 1);
-                    }
-                    job.operations.push_back(op);
-                }
-                jobs.push_back(job);
-            }
-
-            processingTimes = j.at("processingTimes").get<std::vector<std::vector<int>>>();
-        } catch(const json::exception& e) {
-            throw std::runtime_error("JSON processing error: " + std::string(e.what()));
-        }
-
-        BuildMachineEligibleOperations();
-
-        if(!Validate()) {
-            throw std::runtime_error("Loaded data failed validation");
-        }
-    }
 
     // Load multiple instances from a JSON array file
     static std::vector<JobShopData> LoadFromParallelJson(const std::string& filename, int numInstances) {
@@ -191,35 +99,51 @@ public:
 			const auto& jsonPrec = j["Prec"];
 	
 			std::map<std::vector<std::pair<int, int>>, int> opTypeMap;
-			int currentType = 0;
+            std::map<std::vector<std::vector<std::pair<int, int>>>, int> jobTypeMap;
+
+			int currentOpType = 0;
+            int currentJobType = 0;
 	
-			for(size_t jobIdx = 0; jobIdx < jsonJobs.size(); ++jobIdx) {
-				Job job;
-				job.id = jobIdx;
-				const auto& jsonOperations = jsonJobs[jobIdx];
-				for(const auto& jsonOp: jsonOperations) {
-					Operation op;
-					std::vector<std::pair<int, int>> machineTimes;
-					for(const auto& mt: jsonOp) {
-						int time = mt[0].get<int>();
-						int machine = mt[1].get<int>();
-						op.eligibleMachines.push_back(machine);
-						machineTimes.emplace_back(machine, time);
-					}
-					std::sort(machineTimes.begin(), machineTimes.end());
-					auto it = opTypeMap.find(machineTimes);
-					if(it == opTypeMap.end()) {
-						opTypeMap[machineTimes] = currentType;
-						op.type = currentType++;
-					} else {
-						op.type = it->second;
-					}
-					job.operations.push_back(op);
-				}
-				data.jobs.push_back(job);
-			}
+			for (size_t jobIdx = 0; jobIdx < jsonJobs.size(); ++jobIdx) {
+                Job job;
+                const auto& jsonOperations = jsonJobs[jobIdx];
+                std::vector<std::vector<std::pair<int, int>>> jobSignature; // Vector to store the machine-time pairs for the job
+    
+                for (const auto& jsonOp : jsonOperations) {
+                    Operation op;
+                    std::vector<std::pair<int, int>> machineTimes;
+                    for (const auto& mt : jsonOp) {
+                        int time = mt[0].get<int>();
+                        int machine = mt[1].get<int>();
+                        op.eligibleMachines.push_back(machine);
+                        machineTimes.emplace_back(machine, time);
+                    }
+                    std::sort(machineTimes.begin(), machineTimes.end());
+                    auto it = opTypeMap.find(machineTimes);
+                    if (it == opTypeMap.end()) {
+                        opTypeMap[machineTimes] = currentOpType;
+                        op.type = currentOpType++;
+                    }
+                    else {
+                        op.type = it->second;
+                    }
+                    job.operations.push_back(op);
+                    jobSignature.push_back(machineTimes); // Add the machine-time pairs to the job signature
+                }
+    
+                auto jobIt = jobTypeMap.find(jobSignature);
+                if (jobIt == jobTypeMap.end()) {
+                    jobTypeMap[jobSignature] = currentJobType;
+                    job.type = currentJobType++;
+                }
+                else {
+                    job.type = jobIt->second;
+                }
+    
+                data.jobs.push_back(job);
+            }
 	
-			data.processingTimes.assign(currentType, std::vector<int>(data.numMachines, -1));
+			data.processingTimes.assign(currentOpType, std::vector<int>(data.numMachines, -1));
 			for(const auto& pair_type: opTypeMap) {
 				const auto& mtPairs = pair_type.first;
 				int type_id = pair_type.second;
@@ -242,7 +166,7 @@ public:
 					}
 				}
 			}
-			data.numOpTypes = currentType;
+			data.numOpTypes = currentOpType;
 			data.BuildMachineEligibleOperations();
 			result.push_back(std::move(data));
 		}
@@ -291,7 +215,7 @@ struct GPUOperation {
 
 // GPU-side job structure
 struct GPUJob {
-    int id;
+    int type;
     int operationsOffset; // Offset in operations array
     int operationCount;
 };
