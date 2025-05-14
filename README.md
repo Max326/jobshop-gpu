@@ -14,6 +14,22 @@ cmake ..
 make
 ```
 
+To set up CMAES: 
+
+Begin with dependencies: 
+```bash
+sudo apt-get install autoconf automake libtool libgoogle-glog-dev libgflags-dev libeigen3-dev
+```
+
+Within libcmaes directory compile using: 
+
+```bash
+./autogen.sh
+echo "#define CMAES_EXPORT" > include/libcmaes/cmaes_export.h
+./configure
+make
+```
+
 To run the project:
 
 ```bash
