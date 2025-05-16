@@ -43,6 +43,7 @@ public:
                 eCandidates(i, j) = candidates.coeff(i, j);
             }
         }
+        //std::cout << "eCandidates: " << eCandidates << std::endl;
 
         fvalues = g_gpu_evaluator->EvaluateCandidates(eCandidates);
         //std::cout << "fvalues: " << fvalues.transpose() << std::endl;
