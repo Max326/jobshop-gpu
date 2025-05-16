@@ -355,48 +355,43 @@ __global__ void SolveFJSSPKernel(
 }
 
 __global__ void SolveManyWeightsKernel(
-	const GPUProblem* problems,
-	const NeuralNetwork::DeviceEvaluator* evaluators,
-	GPUOperation* ops_working,
-	float* results,
-	int numProblems,
+    const GPUProblem* problems,
+    const NeuralNetwork::DeviceEvaluator* evaluators,
+    GPUOperation* ops_working,
+    float* results,
+    int numProblems,
 	int maxOpsPerProblem) {
-	extern __shared__ float shared_makespans[];
+    extern __shared__ float shared_makespans[];
 
-	int weightSet = blockIdx.x;
-	int problemIdx = threadIdx.x;
+    int weightSet = blockIdx.x;
+    int problemIdx = threadIdx.x;
 
-	float makespan = 0.0f;
+    if (weightSet == 0 && problemIdx == 0) {
+        printf("[KERNEL] SolveManyWeightsKernel start: numProblems=%d, maxOpsPerProblem=%d\n", numProblems, maxOpsPerProblem);
+    }
 
-	if(problemIdx < numProblems) {
-		const GPUProblem problem = problems[problemIdx];
-		const NeuralNetwork::DeviceEvaluator& nn_eval = evaluators[weightSet];
+    float makespan = 0.0f;
 
-		const int numJobs = problem.numJobs;
-		const int numMachines = problem.numMachines;
+    if(problemIdx < numProblems) {
+        const GPUProblem problem = problems[problemIdx];
+        const NeuralNetwork::DeviceEvaluator& nn_eval = evaluators[weightSet];
 
-		int base = (weightSet * numProblems + problemIdx) * maxOpsPerProblem;
-		GPUOperation* local_ops = &ops_working[base];
+        const int numJobs = problem.numJobs;
+        const int numMachines = problem.numMachines;
 
-		// int totalOps = 0;
-		// for(int j = 0; j < numJobs; ++j)
-		// totalOps += problem.jobs[j].operationCount;
+        int base = (weightSet * numProblems + problemIdx) * maxOpsPerProblem;
+        GPUOperation* local_ops = &ops_working[base];
 
-		int jobScheduledOps[MAX_JOBS] = {0};
-		int machine_times[MAX_MACHINES] = {0};
+        int jobScheduledOps[MAX_JOBS] = {0};
+        int machine_times[MAX_MACHINES] = {0};
         
         int jobTypeCount[MAX_OP_TYPES] = {0};
         int opTypeCount[MAX_OP_TYPES] = {0};
-        
-        int opTypePerJobCount[MAX_JOBS][MAX_OP_TYPES]; // Private to thread
-        
-        // TODO: Optimize operations on these tables
-        // Initialize per-job type counts
+        int opTypePerJobCount[MAX_JOBS][MAX_OP_TYPES];
+
         for(int jobID = 0; jobID < numJobs; ++jobID) {
             const GPUJob& job = problem.jobs[jobID];
-
             jobTypeCount[job.type]++;
-
             for(int opID = 0; opID < job.operationCount; ++opID) {
                 GPUOperation& op = local_ops[job.operationsOffset + opID];
                 opTypePerJobCount[jobID][op.type]++;
@@ -404,30 +399,30 @@ __global__ void SolveManyWeightsKernel(
             }
         }
 
-		int local_makespan = 0;
+        int local_makespan = 0;
 
-		bool scheduled_any;
-		do {
-			scheduled_any = false;
-			float bestScoreValue = -FLT_MAX;
-			int bestJobID = -1, bestOpID = -1, bestMachineID = -1;
-			int bestStartTime = 0;
+        bool scheduled_any;
+        do {
+            scheduled_any = false;
+            float bestScoreValue = -FLT_MAX;
+            int bestJobID = -1, bestOpID = -1, bestMachineID = -1;
+            int bestStartTime = 0;
 
-			for(int jobID = 0; jobID < numJobs; ++jobID) {
-				if(jobScheduledOps[jobID] == problem.jobs[jobID].operationCount) 
-					continue;
+            for(int jobID = 0; jobID < numJobs; ++jobID) {
+                if(jobScheduledOps[jobID] == problem.jobs[jobID].operationCount) 
+                    continue;
 
-				GPUJob& job = problem.jobs[jobID];
+                GPUJob& job = problem.jobs[jobID];
 
-				for(int operationID = 0; operationID < job.operationCount; ++operationID) {
-					GPUOperation& operation = local_ops[job.operationsOffset + operationID];
-					if(operation.predecessorCount != 0) continue;
+                for(int operationID = 0; operationID < job.operationCount; ++operationID) {
+                    GPUOperation& operation = local_ops[job.operationsOffset + operationID];
+                    if(operation.predecessorCount != 0) continue;
 
-					for(int m = 0; m < operation.eligibleCount; m++) {
-						int machineID = problem.eligibleMachines[operation.eligibleMachinesOffset + m];
-						int start_time = max(machine_times[machineID], operation.lastPredecessorEndTime);
-						int opMach_idx = operation.type * numMachines + machineID;
-						int pTime = problem.processingTimes[opMach_idx];
+                    for(int m = 0; m < operation.eligibleCount; m++) {
+                        int machineID = problem.eligibleMachines[operation.eligibleMachinesOffset + m];
+                        int start_time = max(machine_times[machineID], operation.lastPredecessorEndTime);
+                        int opMach_idx = operation.type * numMachines + machineID;
+                        int pTime = problem.processingTimes[opMach_idx];
                         
                         // testing + envelope + one hot machine + one hot operation type
                         float features[1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES] = {0.0f};
@@ -487,25 +482,25 @@ __global__ void SolveManyWeightsKernel(
 
                         float score = nn_eval.Evaluate(features);
 
-						if(score > bestScoreValue) {
-							bestScoreValue = score;
-							bestJobID = jobID;
-							bestOpID = operationID;
-							bestMachineID = machineID;
-							bestStartTime = start_time;
-						}
-					}
-				}
-			}
+                        if(score > bestScoreValue) {
+                            bestScoreValue = score;
+                            bestJobID = jobID;
+                            bestOpID = operationID;
+                            bestMachineID = machineID;
+                            bestStartTime = start_time;
+                        }
+                    }
+                }
+            }
 
-			if(bestJobID == -1) break;
+            if(bestJobID == -1) break;
 
-			GPUJob& bestJob = problem.jobs[bestJobID];
-			GPUOperation& bestOperation = local_ops[bestJob.operationsOffset + bestOpID];
-			int opMach_idx = bestOperation.type * numMachines + bestMachineID;
-			int pTime = problem.processingTimes[opMach_idx];
+            GPUJob& bestJob = problem.jobs[bestJobID];
+            GPUOperation& bestOperation = local_ops[bestJob.operationsOffset + bestOpID];
+            int opMach_idx = bestOperation.type * numMachines + bestMachineID;
+            int pTime = problem.processingTimes[opMach_idx];
 
-			int endTime = bestStartTime + pTime;
+            int endTime = bestStartTime + pTime;
 
             jobScheduledOps[bestJobID]++;
             opTypePerJobCount[bestJobID][bestOperation.type]--;
@@ -515,39 +510,42 @@ __global__ void SolveManyWeightsKernel(
                 jobTypeCount[bestJob.type]--;
             }
 
-			bestOperation.predecessorCount = -1;
+            bestOperation.predecessorCount = -1;
 
-			for(int s = 0; s < bestOperation.successorCount; ++s) {
-				int successorID = problem.successorsIDs[bestOperation.successorsOffset + s];
-				GPUOperation& successorOperation = local_ops[bestJob.operationsOffset + successorID];
-				successorOperation.predecessorCount -= 1;
-				successorOperation.lastPredecessorEndTime =
-					max(successorOperation.lastPredecessorEndTime, endTime);
-			}
+            for(int s = 0; s < bestOperation.successorCount; ++s) {
+                int successorID = problem.successorsIDs[bestOperation.successorsOffset + s];
+                GPUOperation& successorOperation = local_ops[bestJob.operationsOffset + successorID];
+                successorOperation.predecessorCount -= 1;
+                successorOperation.lastPredecessorEndTime =
+                    max(successorOperation.lastPredecessorEndTime, endTime);
+            }
 
-			machine_times[bestMachineID] = endTime;
-			if(endTime > local_makespan) local_makespan = endTime;
+            machine_times[bestMachineID] = endTime;
+            if(endTime > local_makespan) local_makespan = endTime;
 
-			scheduled_any = true;
-		} while(scheduled_any);
+            scheduled_any = true;
+        } while(scheduled_any);
 
-		makespan = static_cast<float>(local_makespan);
-		shared_makespans[problemIdx] = makespan;
+        makespan = static_cast<float>(local_makespan);
+        shared_makespans[problemIdx] = makespan;
 
-	} else {
-		shared_makespans[problemIdx] = 0.0f;
-	}
-	__syncthreads();
+    } else {
+        shared_makespans[problemIdx] = 0.0f;
+    }
+    __syncthreads();
 
-	// Redukcja: średnia makespanów w bloku
-	if(threadIdx.x == 0) {
-		float sum = 0.0f;
-		for(int i = 0; i < numProblems; ++i)
-			sum += shared_makespans[i];
-		results[weightSet] = sum / numProblems;
-	}
+    if(threadIdx.x == 0) {
+        float sum = 0.0f;
+        for(int i = 0; i < numProblems; ++i)
+            sum += shared_makespans[i];
+        results[weightSet] = sum / numProblems;
+        printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);
+    }
+
+    if (weightSet == 0 && problemIdx == 0) {
+        printf("[KERNEL] SolveManyWeightsKernel end\n");
+    }
 }
-
 // Print problem details from device (for debugging)
 __device__ void PrintProblemDetails(const GPUProblem& problem) {
     printf("\n=== Problem %d Details ===\n", blockIdx.x * blockDim.x + threadIdx.x);

@@ -23,7 +23,7 @@
 
 #include "FileManager.h"
 
-#define MAX_NN_LAYERS 4 
+#define MAX_NN_LAYERS 4
 
 class NeuralNetwork
 {
@@ -88,6 +88,15 @@ public:
 	void GenerateBiases();
 
 	void FlattenParams();
+
+	static int CalculateTotalParameters(const std::vector<int>& topology) {
+        int total = 0;
+        for (size_t i = 1; i < topology.size(); ++i) {
+            // Wagi i biasy dla warstwy
+            total += topology[i-1] * topology[i] + topology[i];
+        }
+        return total;
+    }
 
     struct DeviceEvaluator {
         const float* weights;  // Flattened weights on device

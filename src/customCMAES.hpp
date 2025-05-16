@@ -1,10 +1,14 @@
 #include "../libcmaes/cmaes.h"
 #include <iostream>
+#include "JobShopGPUEvaluator.h" 
 
 using namespace libcmaes;
 
+extern JobShopGPUEvaluator* g_gpu_evaluator;
+
 class customCMAStrategy : public CMAStrategy<CovarianceUpdate>
 {
+
 public:
     customCMAStrategy(FitFunc &func,
                         CMAParameters<> &parameters)
@@ -20,8 +24,10 @@ public:
                     
         int nn_count = candidates.cols();   // amount of neural networks in training
         int weights_count = candidates.rows();  // amount of weights per neural network
-        Eigen::VectorXd fvalues(nn_count);  // vector of makespans for each nn
+        Eigen::VectorXd fvalues(nn_count);  // vector of makespans for each nn (xd)
         
+    
+        std::cout << "candidates size: " << candidates.rows() << "x" << candidates.cols() << std::endl;
         // Modify begin
 
         // candidates.col(r) -> all weights of neural network of index r, r=(0,191)
@@ -30,9 +36,16 @@ public:
         // Use neural networks to fill fvalues vector ! 
         // fvalues[r] = ... makespan form scheduling with neural network of index r
         // EXAMPLE BELOW \/
-        for (int r = 0; r < nn_count; ++r) {
-            fvalues[r] = candidates.coeff(0, r) * candidates.coeff(0, r) - 2.0 * candidates.coeff(0, r);
+        // Konwersja dMat -> Eigen::MatrixXd
+        Eigen::MatrixXd eCandidates(weights_count, nn_count);
+        for (int i = 0; i < weights_count; i++) {
+            for (int j = 0; j < nn_count; j++) {
+                eCandidates(i, j) = candidates.coeff(i, j);
+            }
         }
+
+        fvalues = g_gpu_evaluator->evaluateCandidates(eCandidates);
+        //std::cout << "fvalues: " << fvalues.transpose() << std::endl;
         // ...
         // ...
         // fvalues -> avg makespan of neural network of index r, r=(0,191)

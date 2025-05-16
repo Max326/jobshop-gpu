@@ -18,7 +18,7 @@
 #include "JobShopData.cuh"
 #include "NeuralNetwork.cuh"
 
-#define MAX_MACHINES 30	 // TODO: make this dynamic
+#define MAX_MACHINES 5	 // TODO: make this dynamic
 #define MAX_JOB_TYPES 15
 #define MAX_JOBS	 30
 #define MAX_OPS		 100

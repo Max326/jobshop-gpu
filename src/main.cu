@@ -1,4 +1,4 @@
-#include <cstdlib>
+/* #include <cstdlib>
 #include <ctime>
 #include <iostream>
 #include <vector>
@@ -120,3 +120,4 @@ float MeasureKernelTime(const std::function<void()>& kernelLaunch) {
     cudaEventDestroy(stop);
     return ms;
 }
+ */
