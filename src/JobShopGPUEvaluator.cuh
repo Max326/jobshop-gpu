@@ -1,5 +1,5 @@
-#ifndef JOB_SHOP_GPU_EVALUATOR_H
-#define JOB_SHOP_GPU_EVALUATOR_H
+#ifndef JOB_SHOP_GPU_EVALUATOR_CUH
+#define JOB_SHOP_GPU_EVALUATOR_CUH
 
 #pragma once
 
@@ -45,4 +45,4 @@ private:
     BatchJobShopGPUData cpu_batch_data_; // aktualny batch
 };
 
-#endif // JOB_SHOP_GPU_EVALUATOR_H
+#endif // JOB_SHOP_GPU_EVALUATOR_CUH
