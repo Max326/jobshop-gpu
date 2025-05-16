@@ -1,4 +1,4 @@
-#include "JobShopGPUEvaluator.h"
+#include "JobShopGPUEvaluator.cuh"
 #include <iostream>
 #include <cuda_runtime.h>
 #include <cstring>

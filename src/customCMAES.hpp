@@ -1,6 +1,6 @@
 #include "../libcmaes/cmaes.h"
 #include <iostream>
-#include "JobShopGPUEvaluator.h" 
+#include "JobShopGPUEvaluator.cuh" 
 
 using namespace libcmaes;
 

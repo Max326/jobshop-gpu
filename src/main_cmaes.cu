@@ -1,5 +1,5 @@
 #include "customCMAES.hpp"
-#include "JobShopGPUEvaluator.h"
+#include "JobShopGPUEvaluator.cuh"
 
 /*
 :0 will be used to mark OG Stanislaus's code regarding cmaes, 

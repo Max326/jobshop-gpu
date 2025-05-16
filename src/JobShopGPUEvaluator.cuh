@@ -1,6 +1,8 @@
 #ifndef JOB_SHOP_GPU_EVALUATOR_H
 #define JOB_SHOP_GPU_EVALUATOR_H
 
+#pragma once
+
 #include <vector>
 #include <string>
 #include <Eigen/Dense>
