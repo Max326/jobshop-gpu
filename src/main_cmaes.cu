@@ -11,7 +11,7 @@ JobShopGPUEvaluator* g_gpu_evaluator = nullptr;
 
 int main(int argc, char *argv[])
 {
-    const std::vector<int> topology = {4, 32, 16, 1};
+    const std::vector<int> topology = {86, 32, 16, 1};
     const int batch_size = 50;
     const std::string problem_file = "test_10k.json";
     int population_size = 192;//:0
@@ -24,8 +24,14 @@ int main(int argc, char *argv[])
     g_gpu_evaluator = &gpu_evaluator;
 
     int total_problems = gpu_evaluator.GetTotalProblems();
+    //std::cout<< total_problems <<std::endl;
 
     std::vector<double> x0(nn_weights_count, 0.0);
+    for(int i = 0; i < nn_weights_count; i++) {
+        x0[i] = (double)rand() / RAND_MAX * 0.02 - 0.01;
+        
+    }
+    
     double sigma = 0.1;//:0
     CMAParameters<> cmaparams(x0, sigma, population_size);//:0  
     FitFunc eval = [](const double *x, const int N) -> double { return 0.0; }; //:0

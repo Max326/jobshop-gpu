@@ -234,24 +234,30 @@ __global__ void SolveManyWeightsKernel(
     GPUOperation* ops_working,
     float* results,
     int numProblems,
-	int maxOpsPerProblem) {
+    int maxOpsPerProblem) {
     extern __shared__ float shared_makespans[];
 
     int weightSet = blockIdx.x;
     int problemIdx = threadIdx.x;
 
+    // Debug: Start kernela
     if (weightSet == 0 && problemIdx == 0) {
         printf("[KERNEL] SolveManyWeightsKernel start: numProblems=%d, maxOpsPerProblem=%d\n", numProblems, maxOpsPerProblem);
     }
 
     float makespan = 0.0f;
 
-    if(problemIdx < numProblems) {
+    if (problemIdx < numProblems) {
         const GPUProblem problem = problems[problemIdx];
         const NeuralNetwork::DeviceEvaluator& nn_eval = evaluators[weightSet];
 
         const int numJobs = problem.numJobs;
         const int numMachines = problem.numMachines;
+
+        // Debug: Szczegóły problemu
+        if (weightSet == 0 && problemIdx == 0) {
+            //PrintProblemDetails(problem);
+        }
 
         int base = (weightSet * numProblems + problemIdx) * maxOpsPerProblem;
         GPUOperation* local_ops = &ops_working[base];
@@ -261,12 +267,17 @@ __global__ void SolveManyWeightsKernel(
         
         int jobTypeCount[MAX_OP_TYPES] = {0};
         int opTypeCount[MAX_OP_TYPES] = {0};
-        int opTypePerJobCount[MAX_JOBS][MAX_OP_TYPES];
+        int opTypePerJobCount[MAX_JOBS][MAX_OP_TYPES] = {0};
 
-        for(int jobID = 0; jobID < numJobs; ++jobID) {
+        // Debug: Inicjalizacja danych
+        if (weightSet == 0 && problemIdx == 0) {
+            printf("[KERNEL] Inicjalizacja danych dla problemIdx=%d\n", problemIdx);
+        }
+
+        for (int jobID = 0; jobID < numJobs; ++jobID) {
             const GPUJob& job = problem.jobs[jobID];
             jobTypeCount[job.type]++;
-            for(int opID = 0; opID < job.operationCount; ++opID) {
+            for (int opID = 0; opID < job.operationCount; ++opID) {
                 GPUOperation& op = local_ops[job.operationsOffset + opID];
                 opTypePerJobCount[jobID][op.type]++;
                 opTypeCount[op.type]++;
@@ -282,81 +293,56 @@ __global__ void SolveManyWeightsKernel(
             int bestJobID = -1, bestOpID = -1, bestMachineID = -1;
             int bestStartTime = 0;
 
-            for(int jobID = 0; jobID < numJobs; ++jobID) {
-                if(jobScheduledOps[jobID] == problem.jobs[jobID].operationCount) 
+            for (int jobID = 0; jobID < numJobs; ++jobID) {
+                if (jobScheduledOps[jobID] == problem.jobs[jobID].operationCount)
                     continue;
 
                 GPUJob& job = problem.jobs[jobID];
 
-                for(int operationID = 0; operationID < job.operationCount; ++operationID) {
+                for (int operationID = 0; operationID < job.operationCount; ++operationID) {
                     GPUOperation& operation = local_ops[job.operationsOffset + operationID];
-                    if(operation.predecessorCount != 0) continue;
+                    if (operation.predecessorCount != 0) continue;
 
-                    for(int m = 0; m < operation.eligibleCount; m++) {
+                    for (int m = 0; m < operation.eligibleCount; m++) {
                         int machineID = problem.eligibleMachines[operation.eligibleMachinesOffset + m];
                         int start_time = max(machine_times[machineID], operation.lastPredecessorEndTime);
                         int opMach_idx = operation.type * numMachines + machineID;
                         int pTime = problem.processingTimes[opMach_idx];
-                        
-                        // 1 + 2 * 5 + 3 * 15 + 2 * 15 = 1 + 10 + 45 + 30 = 86
+
+                        // Debug: Szczegóły operacji
+                        if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
+                            //printf("[KERNEL] Operation details: jobID=%d, opID=%d, machineID=%d, start_time=%d, pTime=%d\n",
+                                //   jobID, operationID, machineID, start_time, pTime);
+                        }
+
                         float features[1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES] = {0.0f};
 
-						features[0] = static_cast<float>(start_time) - machine_times[machineID]; //* wasted time
-							// TODO: one hot job type encoding
-							
-							// static_cast<float>(job.operationCount - jobScheduledOps[jobID]), //* remaining operations
+                        features[0] = static_cast<float>(start_time) - machine_times[machineID];
 
-                            /* previous features
-							static_cast<float>(pTime),
-                            static_cast<float>(start_time - machine_times[machineID]), //* wasted time
-                            static_cast<float>(4.0),
-                            static_cast<float>(job.operationCount)
-                            */
-						// };
-
-                        //* envelope start
                         for (int i = 1; i < MAX_MACHINES + 1; ++i) {
                             features[i] = static_cast<float>(local_makespan - machine_times[i - 1]);
                         }
                         features[1 + machineID] = static_cast<float>(local_makespan - (start_time + pTime));
-                        //* envelope end
-
-                        features[1 + MAX_MACHINES + machineID] = 1.0f; // one hot machine encoding
-
-						features[1 + 2 * MAX_MACHINES + operation.type] = 1.0f; // one hot operation type encoding
-
-                        //* total number of operations left (of each type) - start
-                        int totOpLeftStart = 1 + 2* MAX_MACHINES + MAX_OP_TYPES;
-                        for (int i = totOpLeftStart; i < totOpLeftStart + MAX_OP_TYPES; i++){
-                            features[i] = static_cast<float>(opTypeCount[i]);
+                        features[1 + MAX_MACHINES + machineID] = 1.0f;
+                        features[1 + 2 * MAX_MACHINES + operation.type] = 1.0f;
+                        // Dodaj ten kod tuż przed wywołaniem nn_eval.Evaluate(features)
+                        if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
+                            printf("[DEBUG] Features: ");
+                            for (int i = 0; i < 10; i++) { // Wyświetl tylko pierwsze 10 features
+                                printf("%.2f ", features[i]);
+                            }
+                            printf("...\n");
                         }
-                        --features[totOpLeftStart + operation.type]; // because we score for the operation as if it was processed
-                        //* total number of operations left (of each type) - end
+                        
 
-                        //* job's operations left (of each type) - start
-                        int jobOpLeftStart = 1 + 2* MAX_MACHINES + 2 * MAX_OP_TYPES;
-                        for (int i = jobOpLeftStart; i < jobOpLeftStart + MAX_OP_TYPES; i++){
-                            features[i] = static_cast<float>(opTypePerJobCount[jobID][i]);
+                        float score = nn_eval.Evaluate(features);//! Error: evaluate returns 0 or nans
+
+                        // Debug: Wynik oceny
+                        if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
+                            printf("[KERNEL] Score=%.2f\n", score);
                         }
-                        --features[jobOpLeftStart + operation.type]; // because we score for the operation as if it was processed
-                        //* job's operations left (of each type) - end
 
-                        //* one hot job type encoding - start
-                        int jobTypeStart = 1 + 2* MAX_MACHINES + 3 * MAX_OP_TYPES;
-                        features[jobTypeStart + job.type] = 1.0f; // one hot job type encoding
-                        //* one hot job type encoding - end
-
-                        //* total number of jobs left (of each type) - start
-                        int jobTypeCountStart = 1 + 2* MAX_MACHINES + 3 * MAX_OP_TYPES + MAX_JOB_TYPES;
-                        for (int i = jobTypeCountStart; i < jobTypeCountStart + MAX_JOB_TYPES; i++){
-                            features[i] = static_cast<float>(jobTypeCount[i]);
-                        }
-                        --features[jobTypeCountStart + job.type]; // because we score for the operation as if it was processed
-                        //* total number of jobs left (of each type) - end
-
-                        float score = nn_eval.Evaluate(features);
-
-                        if(score > bestScoreValue) {
+                        if (score > bestScoreValue) {
                             bestScoreValue = score;
                             bestJobID = jobID;
                             bestOpID = operationID;
@@ -367,7 +353,7 @@ __global__ void SolveManyWeightsKernel(
                 }
             }
 
-            if(bestJobID == -1) break;
+            if (bestJobID == -1) break;
 
             GPUJob& bestJob = problem.jobs[bestJobID];
             GPUOperation& bestOperation = local_ops[bestJob.operationsOffset + bestOpID];
@@ -386,7 +372,7 @@ __global__ void SolveManyWeightsKernel(
 
             bestOperation.predecessorCount = -1;
 
-            for(int s = 0; s < bestOperation.successorCount; ++s) {
+            for (int s = 0; s < bestOperation.successorCount; ++s) {
                 int successorID = problem.successorsIDs[bestOperation.successorsOffset + s];
                 GPUOperation& successorOperation = local_ops[bestJob.operationsOffset + successorID];
                 successorOperation.predecessorCount -= 1;
@@ -395,10 +381,10 @@ __global__ void SolveManyWeightsKernel(
             }
 
             machine_times[bestMachineID] = endTime;
-            if(endTime > local_makespan) local_makespan = endTime;
+            if (endTime > local_makespan) local_makespan = endTime;
 
             scheduled_any = true;
-        } while(scheduled_any);
+        } while (scheduled_any);
 
         makespan = static_cast<float>(local_makespan);
         shared_makespans[problemIdx] = makespan;
@@ -408,12 +394,12 @@ __global__ void SolveManyWeightsKernel(
     }
     __syncthreads();
 
-    if(threadIdx.x == 0) {
+    if (threadIdx.x == 0) {
         float sum = 0.0f;
-        for(int i = 0; i < numProblems; ++i)
+        for (int i = 0; i < numProblems; ++i)
             sum += shared_makespans[i];
         results[weightSet] = sum / numProblems;
-        printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);
+        //printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);
     }
 
     if (weightSet == 0 && problemIdx == 0) {

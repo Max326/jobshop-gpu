@@ -159,7 +159,7 @@ public:
 	int GetNumLayers() const { return topology.size(); }
 
 private:
-	static const int maxLayerSize = 32;
+	static const int maxLayerSize = 86;
 	std::vector<float> flattenedWeights;
 	std::vector<float> flattenedBiases;
 

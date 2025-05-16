@@ -133,6 +133,7 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
         memcpy(&ops_working[base], &cpu_batch_data_.operations[opsOffset], opsCount * sizeof(GPUOperation));
       }
     }
+
     auto t4 = std::chrono::high_resolution_clock::now();
 
     GPUOperation* d_ops_working = nullptr;
@@ -144,6 +145,7 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
 
     // Kernel
     auto t5 = std::chrono::high_resolution_clock::now();
+
     JobShopHeuristic::SolveBatchNew(
         d_problems_, d_evaluators, d_ops_working, d_results, 
         num_problems_to_evaluate_, nn_candidate_count, max_ops_per_problem_
