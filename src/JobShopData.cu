@@ -17,6 +17,7 @@ BatchJobShopGPUData JobShopDataGPU::PrepareBatchCPU(const std::vector<JobShopDat
         // Jobs
         for (const auto& job : problem.jobs) {
             GPUJob gpuJob;
+            gpuJob.id = job.id;
             gpuJob.type = job.type;
             gpuJob.operationsOffset = batch.operations.size();
             gpuJob.operationCount = job.operations.size();

@@ -217,24 +217,6 @@ void JobShopHeuristic::PrintSchedule(const CPUSolution& solution, JobShopData da
     std::cout << "Makespan: " << solution.makespan << std::endl;
 }
 
-// Feature extraction for neural network (obsolete)
-std::vector<float> JobShopHeuristic::ExtractFeatures(const JobShopData& data,
-                                                     const Job& job,
-                                                     const int& operationType,
-                                                     const int& machineId,
-                                                     const int& startTime,
-                                                     const int& machineAvailableTime) const {
-    std::vector<float> features;
-    int waitTime = startTime - machineAvailableTime;
-    int envelope = job.lastOpEndTime - machineAvailableTime;
-
-    features.push_back(static_cast<float>(data.processingTimes[operationType][machineId]));
-    features.push_back(static_cast<float>(waitTime));
-    features.push_back(static_cast<float>(envelope));
-    features.push_back(static_cast<float>(data.jobs[job.type].operations.size()));
-    return features;
-}
-
 // Update schedule after scheduling an operation (obsolete)
 void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operationIdx,
                                       int machineId, CPUSolution& solution) {
@@ -557,7 +539,7 @@ __device__ void PrintProblemDetails(const GPUProblem& problem) {
     printf("\nJobs:\n");
     for(int j = 0; j < problem.numJobs; j++) {
         GPUJob job = problem.jobs[j];
-        printf("Job %d (%d ops):\n", job.type, job.operationCount);
+        printf("Job %d, of type %d (%d ops):\n", job.id, job.type, job.operationCount);
 
         for(int o = 0; o < job.operationCount; o++) {
             GPUOperation op = problem.operations[job.operationsOffset + o];
