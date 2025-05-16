@@ -105,21 +105,6 @@ SolutionManager::GPUSolutions JobShopHeuristic::CPUSolution::ToGPU() const {
     return gpuSol;
 }
 
-// Launch GPU kernel for batch solving
-void JobShopHeuristic::SolveBatch(
-    const GPUProblem* problems,
-    SolutionManager::GPUSolutions* solutions,
-    int numProblems) {
-    auto eval = neuralNetwork.GetDeviceEvaluator();
-    int threads = 64;
-    int blocks = numProblems;
-    
-    cudaDeviceSetLimit(cudaLimitStackSize, 4096);  // Before kernel launch
-
-    SolveFJSSPKernel<<<blocks, threads>>>(problems, eval, solutions, numProblems);
-    cudaDeviceSynchronize();
-}
-
 // New solver 
 void JobShopHeuristic::SolveBatchNew(
     const GPUProblem* problems,
@@ -242,99 +227,6 @@ void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operatio
     solution.makespan = std::max(solution.makespan, endTime);
 }
 
-// GPU kernel for solving batch of problems
-__global__ void SolveFJSSPKernel(
-    const GPUProblem* problems,
-    const NeuralNetwork::DeviceEvaluator nn_eval,
-    SolutionManager::GPUSolutions* solutions,
-    int total_problems) {
-
-    int problem_id = blockIdx.x;
-    if(problem_id >= total_problems) return;
-
-    const GPUProblem problem = problems[problem_id];
-
-    int* my_counts = solutions->allScheduleCounts +
-                     problem_id * solutions->numMachines;
-    OperationSchedule* my_schedule = solutions->allSchedules +
-                                     problem_id * solutions->numMachines * solutions->maxOps;
-    int* my_makespan = solutions->allMakespans + problem_id;
-
-    int scheduledOps = 0;
-    int machine_times[MAX_MACHINES] = {0};
-
-    while(true) {
-        float bestScoreValue = -FLT_MAX;
-        int bestJobID = -1, bestOpID = -1, bestMachineID = -1;
-        int bestStartTime = 0;
-
-        // Iterate over all available operations in all jobs
-        for(int jobID = 0; jobID < problem.numJobs; ++jobID) {
-            const GPUJob& job = problem.jobs[jobID];
-            for(int operationID = 0; operationID < job.operationCount; ++operationID) {
-                GPUOperation& operation = problem.operations[job.operationsOffset + operationID];
-                if (operation.predecessorCount != 0) continue;
-        
-                for(int m = 0; m < operation.eligibleCount; m++) {
-                    int machineID = problem.eligibleMachines[operation.eligibleMachinesOffset + m];
-                    int start_time = max(machine_times[machineID], operation.lastPredecessorEndTime);
-                    int opMach_idx = operation.type * problem.numMachines + machineID;
-                    int pTime = problem.processingTimes[opMach_idx];
-
-                    float features[4] = {
-                        static_cast<float>(pTime),
-                        static_cast<float>(start_time - machine_times[machineID]),
-                        static_cast<float>(4.0),
-                        static_cast<float>(problem.jobs[jobID].operationCount)};
-    
-                    float score = nn_eval.Evaluate(features);
-    
-                    if(score > bestScoreValue) {
-                        bestScoreValue = score;
-                        bestJobID = jobID;
-                        bestOpID = operationID;
-                        bestMachineID = machineID;
-                        bestStartTime= start_time;
-                    }
-                }
-            }
-        }
-
-        if(bestJobID == -1) break;
-
-        GPUJob& bestJob = problem.jobs[bestJobID];
-        GPUOperation& bestOperation = problem.operations[bestJob.operationsOffset + bestOpID];
-        int opMach_idx = bestOperation.type * problem.numMachines + bestMachineID;
-        int pTime = problem.processingTimes[opMach_idx];
-
-        int endTime = bestStartTime + pTime;
-
-        bestOperation.predecessorCount = -1;
-
-        for (int s = 0; s < bestOperation.successorCount; ++s) {
-            int successorID = problem.successorsIDs[bestOperation.successorsOffset + s];
-            GPUOperation& successorOperation = problem.operations[bestJob.operationsOffset + successorID];
-            atomicSub(&successorOperation.predecessorCount, 1);
-            successorOperation.lastPredecessorEndTime = 
-                max(successorOperation.lastPredecessorEndTime, endTime);
-        }
-
-        int op_index = my_counts[bestMachineID]++;
-        if(op_index < solutions->maxOps) {
-            int flat_index = bestMachineID * solutions->maxOps + op_index;
-            my_schedule[flat_index] = {
-                bestJobID,
-                bestOperation.type,
-                bestStartTime,
-                endTime};
-        }
-
-        machine_times[bestMachineID] = endTime;
-        if(endTime > *my_makespan) *my_makespan = endTime;
-
-        scheduledOps++;
-    }
-}
 
 __global__ void SolveManyWeightsKernel(
 	const GPUProblem* problems,
@@ -411,7 +303,7 @@ __global__ void SolveManyWeightsKernel(
 						int opMach_idx = operation.type * numMachines + machineID;
 						int pTime = problem.processingTimes[opMach_idx];
                         
-                        // testing + envelope + one hot machine + one hot operation type
+                        // 1 + 2 * 5 + 3 * 15 + 2 * 15 = 1 + 10 + 45 + 30 = 86
                         float features[1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES] = {0.0f};
 
 						features[0] = static_cast<float>(start_time) - machine_times[machineID]; //* wasted time
