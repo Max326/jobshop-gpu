@@ -16,17 +16,17 @@ public:
     ~JobShopGPUEvaluator();
 
     // Ustawia batch problemów do ewaluacji (nie kopiuje z pliku, tylko z RAM)
-    bool setCurrentBatch(int batch_start, int batch_size);
+    bool SetCurrentBatch(int batch_start, int batch_size);
 
     // Ewaluacja populacji wag na aktualnym batchu problemów
-    Eigen::VectorXd evaluateCandidates(const Eigen::MatrixXd& candidates);
+    Eigen::VectorXd EvaluateCandidates(const Eigen::MatrixXd& candidates);
 
-    int getTotalNNParams() const { return nn_total_params_; }
-    int getTotalProblems() const { return cpu_problems_.size(); }
+    int GetTotalNNParams() const { return nn_total_params_; }
+    int GetTotalProblems() const { return cpu_problems_.size(); }
 
 private:
-    void freeProblemDataGPU();
-    void prepareProblemDataGPU(const std::vector<JobShopData>& batch);
+    void FreeProblemDataGPU();
+    void PrepareProblemDataGPU(const std::vector<JobShopData>& batch);
 
     std::vector<JobShopData> cpu_problems_; // wszystkie problemy w RAM
     int num_problems_to_evaluate_ = 0;

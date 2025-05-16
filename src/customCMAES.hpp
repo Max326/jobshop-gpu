@@ -44,7 +44,7 @@ public:
             }
         }
 
-        fvalues = g_gpu_evaluator->evaluateCandidates(eCandidates);
+        fvalues = g_gpu_evaluator->EvaluateCandidates(eCandidates);
         //std::cout << "fvalues: " << fvalues.transpose() << std::endl;
         // ...
         // ...

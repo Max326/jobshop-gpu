@@ -23,7 +23,7 @@ int main(int argc, char *argv[])
     JobShopGPUEvaluator gpu_evaluator(problem_file, topology);
     g_gpu_evaluator = &gpu_evaluator;
 
-    int total_problems = gpu_evaluator.getTotalProblems();
+    int total_problems = gpu_evaluator.GetTotalProblems();
 
     std::vector<double> x0(nn_weights_count, 0.0);
     double sigma = 0.1;//:0
@@ -33,7 +33,7 @@ int main(int argc, char *argv[])
 
     int batch_start = 0;
 
-    while(!optim.stop() && gpu_evaluator.setCurrentBatch(batch_start, batch_size)) {
+    while(!optim.stop() && gpu_evaluator.SetCurrentBatch(batch_start, batch_size)) {
         dMat candidates = optim.ask();//:0
         optim.eval(candidates);//:0
         optim.tell();//:0

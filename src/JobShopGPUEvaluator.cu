@@ -25,10 +25,10 @@ JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const 
 }
 
 JobShopGPUEvaluator::~JobShopGPUEvaluator() {
-    freeProblemDataGPU();
+    FreeProblemDataGPU();
 }
 
-void JobShopGPUEvaluator::freeProblemDataGPU() {
+void JobShopGPUEvaluator::FreeProblemDataGPU() {
     JobShopDataGPU::FreeBatchGPUData(d_problems_, d_jobs_, d_ops_, d_eligible_, d_succ_, d_procTimes_);
     d_problems_ = nullptr;
     d_jobs_ = nullptr;
@@ -38,8 +38,8 @@ void JobShopGPUEvaluator::freeProblemDataGPU() {
     d_procTimes_ = nullptr;
 }
 
-void JobShopGPUEvaluator::prepareProblemDataGPU(const std::vector<JobShopData>& batch) {
-    freeProblemDataGPU();
+void JobShopGPUEvaluator::PrepareProblemDataGPU(const std::vector<JobShopData>& batch) {
+    FreeProblemDataGPU();
     cpu_batch_data_ = JobShopDataGPU::PrepareBatchCPU(batch);
     num_problems_to_evaluate_ = batch.size();
 
@@ -52,24 +52,24 @@ void JobShopGPUEvaluator::prepareProblemDataGPU(const std::vector<JobShopData>& 
         throw std::runtime_error("Mismatch in number of problems uploaded to GPU.");
 }
 
-bool JobShopGPUEvaluator::setCurrentBatch(int batch_start, int batch_size) {
+bool JobShopGPUEvaluator::SetCurrentBatch(int batch_start, int batch_size) {
     auto t0 = std::chrono::high_resolution_clock::now();
     if (batch_start >= (int)cpu_problems_.size())
         return false;
     int batch_end = std::min(batch_start + batch_size, (int)cpu_problems_.size());
     std::vector<JobShopData> batch(cpu_problems_.begin() + batch_start, cpu_problems_.begin() + batch_end);
     auto t1 = std::chrono::high_resolution_clock::now();
-    prepareProblemDataGPU(batch);
+    PrepareProblemDataGPU(batch);
     auto t2 = std::chrono::high_resolution_clock::now();
     std::cout << "[TIMER][CPU] Batch slicing: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms, "
-              << "prepareProblemDataGPU: "
+              << "PrepareProblemDataGPU: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() << " ms"
               << std::endl;
     return true;
 }
 
-Eigen::VectorXd JobShopGPUEvaluator::evaluateCandidates(const Eigen::MatrixXd& candidates) {
+Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& candidates) {
     auto t0 = std::chrono::high_resolution_clock::now();
     int nn_candidate_count = candidates.cols();
     if (candidates.rows() != nn_total_params_)
