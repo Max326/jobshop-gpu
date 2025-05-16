@@ -21,7 +21,7 @@
 #define MAX_MACHINES 5	 // TODO: make this dynamic
 #define MAX_JOB_TYPES 15
 #define MAX_JOBS	 30
-#define MAX_OPS		 100
+#define MAX_OPS		 15
 #define MAX_OP_TYPES 15
 
 // Structure for scheduled operation
@@ -73,10 +73,6 @@ public:
         int maxOperationsPerMachine = 100;
     };
 
-    void SolveBatch(const GPUProblem* problems,
-                    SolutionManager::GPUSolutions* solutions,
-                    int numProblems);
-
 	static void SolveBatchNew(
 		const GPUProblem* problems,
 		const NeuralNetwork::DeviceEvaluator* evaluators,
@@ -94,13 +90,6 @@ public:
 
 private:
     static NeuralNetwork InitializeNetworkFromFile(const std::string& filename);
-
-    std::vector<float> ExtractFeatures(const JobShopData& data,
-                                       const Job& job,
-                                       const int& operationType,
-                                       const int& machineId,
-                                       const int& startTime,
-                                       const int& machineAvailableTime) const;
 
     void UpdateSchedule(JobShopData& data, int jobId, int operationId, int machineId, CPUSolution& solution);
 };

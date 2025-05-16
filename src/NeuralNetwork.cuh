@@ -23,7 +23,7 @@
 
 #include "FileManager.h"
 
-#define MAX_NN_LAYERS 4
+#define MAX_NN_LAYERS 86
 
 class NeuralNetwork
 {

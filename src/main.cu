@@ -13,7 +13,7 @@ int main() {
 
     const int numProblems = 50;
     const int numWeights = 192;
-    const std::vector<int> topology = {4, 32, 16, 1};
+    // const std::vector<int> topology = {86, 32, 16, 1};
 
     try {
         // 1. Load all problems from JSON file (efficient batch load)

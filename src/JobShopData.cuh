@@ -26,6 +26,7 @@ struct Operation {
 
 // Host-side job structure
 struct Job {
+    int id;
     int type;
     std::vector<Operation> operations;   // Ordered list of operations
     int nextOpIndex = 0;                 // Next operation to schedule
@@ -106,6 +107,7 @@ public:
 	
 			for (size_t jobIdx = 0; jobIdx < jsonJobs.size(); ++jobIdx) {
                 Job job;
+                job.id = jobIdx;
                 const auto& jsonOperations = jsonJobs[jobIdx];
                 std::vector<std::vector<std::pair<int, int>>> jobSignature; // Vector to store the machine-time pairs for the job
     
@@ -215,6 +217,7 @@ struct GPUOperation {
 
 // GPU-side job structure
 struct GPUJob {
+    int id;
     int type;
     int operationsOffset; // Offset in operations array
     int operationCount;
