@@ -363,7 +363,13 @@ __global__ void SolveManyWeightsKernel(
                                 //min_val, min_idx, max_val, max_idx);
 }
                         
-
+                        const float SCALE_FACTOR = 100.0f;
+                        // normalize nn inputs (it may like it better)
+                        features[0] /= SCALE_FACTOR;
+                        for (int i = 1; i < MAX_MACHINES + 1; ++i) {
+                            features[i] /= SCALE_FACTOR;
+                        }
+                        features[1 + machineID] /= SCALE_FACTOR;
                         float score = nn_eval.Evaluate(features);//! Error: evaluate returns 0 or nans
 
                         // Debug: Score print 
@@ -428,7 +434,7 @@ __global__ void SolveManyWeightsKernel(
         for (int i = 0; i < numProblems; ++i)
             sum += shared_makespans[i];
         results[weightSet] = sum / numProblems;
-        //printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);
+        printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);
     }
 
     if (weightSet == 0 && problemIdx == 0) {
