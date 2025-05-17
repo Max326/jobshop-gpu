@@ -254,10 +254,10 @@ __global__ void SolveManyWeightsKernel(
         const int numJobs = problem.numJobs;
         const int numMachines = problem.numMachines;
 
-        // Debug: Szczegóły problemu
-        if (weightSet == 0 && problemIdx == 0) {
-            //PrintProblemDetails(problem);
-        }
+        // Debug: problem details print 
+/*         if (weightSet == 0 && problemIdx == 0) {
+            PrintProblemDetails(problem);
+        } */
 
         int base = (weightSet * numProblems + problemIdx) * maxOpsPerProblem;
         GPUOperation* local_ops = &ops_working[base];
@@ -269,10 +269,10 @@ __global__ void SolveManyWeightsKernel(
         int opTypeCount[MAX_OP_TYPES] = {0};
         int opTypePerJobCount[MAX_JOBS][MAX_OP_TYPES] = {0};
 
-        // Debug: Inicjalizacja danych
-        if (weightSet == 0 && problemIdx == 0) {
+        // Debug: data init 
+/*         if (weightSet == 0 && problemIdx == 0) {
             printf("[KERNEL] Inicjalizacja danych dla problemIdx=%d\n", problemIdx);
-        }
+        } */
 
         for (int jobID = 0; jobID < numJobs; ++jobID) {
             const GPUJob& job = problem.jobs[jobID];
@@ -309,12 +309,12 @@ __global__ void SolveManyWeightsKernel(
                         int opMach_idx = operation.type * numMachines + machineID;
                         int pTime = problem.processingTimes[opMach_idx];
 
-                        // Debug: Szczegóły operacji
-                        if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
-                            //printf("[KERNEL] Operation details: jobID=%d, opID=%d, machineID=%d, start_time=%d, pTime=%d\n",
-                                //   jobID, operationID, machineID, start_time, pTime);
+                        // Debug: op details
+/*                         if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
+                            printf("[KERNEL] Operation details: jobID=%d, opID=%d, machineID=%d, start_time=%d, pTime=%d\n",
+                                  jobID, operationID, machineID, start_time, pTime);
                         }
-
+ */
                         float features[1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES] = {0.0f};
 
                         features[0] = static_cast<float>(start_time) - machine_times[machineID];
@@ -328,24 +328,24 @@ __global__ void SolveManyWeightsKernel(
                         
                         
 
-                        // Zamień istniejący print features
+                        // Print features
                         if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
-                            printf("[DEBUG] Features (pierwsze 10): ");
+                            //printf("[DEBUG] Features (pierwsze 10): ");
                             for (int i = 0; i < min(10, 1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES); i++) {
-                                printf("%.2f ", features[i]);
+                                //printf("%.2f ", features[i]);
                             }
-                            printf("...\n");
+                            //printf("...\n");
                             
-                            // Wyświetl istotne sekcje features
-                            printf("[DEBUG] Feature[0] (czas startu): %.2f\n", features[0]);
+                            // print some crucial values
+                            //printf("[DEBUG] Feature[0] (start time): %.2f\n", features[0]);
                             
-                            printf("[DEBUG] Features[1-%d] (czasy maszyn): ", MAX_MACHINES);
+                           // printf("[DEBUG] Features[1-%d] (machine times): ", MAX_MACHINES);
                             for (int i = 1; i <= min(5, MAX_MACHINES); i++) {
-                                printf("%.2f ", features[i]);
+                               // printf("%.2f ", features[i]);
                             }
-                            printf("...\n");
+                            //printf("...\n");
                             
-                            // Sprawdź skrajne wartości
+                            // min/max 
                             float min_val = FLT_MAX;
                             float max_val = -FLT_MAX;
                             int min_idx = -1, max_idx = -1;
@@ -359,14 +359,14 @@ __global__ void SolveManyWeightsKernel(
                                     max_idx = i;
                                 }
                             }
-                            printf("[DEBUG] Min/max features: min=%.2f (idx=%d), max=%.2f (idx=%d)\n", 
-                                min_val, min_idx, max_val, max_idx);
+                            //printf("[DEBUG] Min/max features: min=%.2f (idx=%d), max=%.2f (idx=%d)\n", 
+                                //min_val, min_idx, max_val, max_idx);
 }
                         
 
                         float score = nn_eval.Evaluate(features);//! Error: evaluate returns 0 or nans
 
-                        // Debug: Wynik oceny
+                        // Debug: Score print 
                         if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
                             printf("[KERNEL] Score=%.2f\n", score);
                         }
@@ -428,7 +428,7 @@ __global__ void SolveManyWeightsKernel(
         for (int i = 0; i < numProblems; ++i)
             sum += shared_makespans[i];
         results[weightSet] = sum / numProblems;
-        printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);
+        //printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);
     }
 
     if (weightSet == 0 && problemIdx == 0) {
