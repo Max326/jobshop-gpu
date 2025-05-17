@@ -260,8 +260,8 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
             // Sprawdzamy sumę przed aktywacją
             if(isnan(sum) || isinf(sum)) {
                 if (threadIdx.x == 0 && blockIdx.x == 0) {
-                    //printf("[ERROR] Invalid sum at layer %d, neuron %d: %f\n", 
-                           //layer, neuron, sum);
+                    printf("[ERROR] Invalid sum at layer %d, neuron %d: %f\n", 
+                           layer, neuron, sum);
                 }
                 return 0.0f;
             }
