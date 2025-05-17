@@ -11,14 +11,14 @@ void NeuralNetwork::InitializeCudaData() {
 	// 1. Calculate offsets for each layer's weights and biases
 	FlattenParams();
 
-	std::cout << "\nFlattened weights size: " << flattenedWeights.size() << "\n";
-	std::cout << "Flattened biases size: " << flattenedBiases.size() << "\n";
+	/* std::cout << "\nFlattened weights size: " << flattenedWeights.size() << "\n";
+	std::cout << "Flattened biases size: " << flattenedBiases.size() << "\n"; */
 
 
-	std::cout << "First few weights: ";
+	/* std::cout << "First few weights: ";
 	for(int i = 0; i < std::min(5, (int)flattenedWeights.size()); i++)
 	 	std::cout << flattenedWeights[i] << " ";
-	    std::cout << "\n";
+	    std::cout << "\n"; */
 
 	layerOffsets.resize(weights.size());
 	biasOffsets.resize(biases.size());

@@ -325,14 +325,43 @@ __global__ void SolveManyWeightsKernel(
                         features[1 + machineID] = static_cast<float>(local_makespan - (start_time + pTime));
                         features[1 + MAX_MACHINES + machineID] = 1.0f;
                         features[1 + 2 * MAX_MACHINES + operation.type] = 1.0f;
-                        // Dodaj ten kod tuż przed wywołaniem nn_eval.Evaluate(features)
+                        
+                        
+
+                        // Zamień istniejący print features
                         if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
-                            printf("[DEBUG] Features: ");
-                            for (int i = 0; i < 10; i++) { // Wyświetl tylko pierwsze 10 features
+                            printf("[DEBUG] Features (pierwsze 10): ");
+                            for (int i = 0; i < min(10, 1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES); i++) {
                                 printf("%.2f ", features[i]);
                             }
                             printf("...\n");
-                        }
+                            
+                            // Wyświetl istotne sekcje features
+                            printf("[DEBUG] Feature[0] (czas startu): %.2f\n", features[0]);
+                            
+                            printf("[DEBUG] Features[1-%d] (czasy maszyn): ", MAX_MACHINES);
+                            for (int i = 1; i <= min(5, MAX_MACHINES); i++) {
+                                printf("%.2f ", features[i]);
+                            }
+                            printf("...\n");
+                            
+                            // Sprawdź skrajne wartości
+                            float min_val = FLT_MAX;
+                            float max_val = -FLT_MAX;
+                            int min_idx = -1, max_idx = -1;
+                            for (int i = 0; i < (1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES); i++) {
+                                if (features[i] < min_val) {
+                                    min_val = features[i];
+                                    min_idx = i;
+                                }
+                                if (features[i] > max_val) {
+                                    max_val = features[i];
+                                    max_idx = i;
+                                }
+                            }
+                            printf("[DEBUG] Min/max features: min=%.2f (idx=%d), max=%.2f (idx=%d)\n", 
+                                min_val, min_idx, max_val, max_idx);
+}
                         
 
                         float score = nn_eval.Evaluate(features);//! Error: evaluate returns 0 or nans
@@ -399,7 +428,7 @@ __global__ void SolveManyWeightsKernel(
         for (int i = 0; i < numProblems; ++i)
             sum += shared_makespans[i];
         results[weightSet] = sum / numProblems;
-        //printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);
+        printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);
     }
 
     if (weightSet == 0 && problemIdx == 0) {

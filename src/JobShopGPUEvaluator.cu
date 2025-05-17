@@ -8,7 +8,7 @@ JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const 
     : nn_topology_(nn_topology)
 {
     // all problems at once 
-    cpu_problems_ = JobShopData::LoadFromParallelJson(problem_file, 100);//TODO fix nummber of problem assignment 
+    cpu_problems_ = JobShopData::LoadFromParallelJson(problem_file, 400);//TODO fix nummber of problem assignment 
     if (cpu_problems_.empty())
         throw std::runtime_error("No problems loaded!");
 
