@@ -33,10 +33,10 @@ int main(int argc, char *argv[])
     }
     
     double sigma = 0.1;//:0
-    // CMAParameters<> cmaparams(x0, sigma, population_size);//:0  
+    CMAParameters<> cmaparams(x0, sigma, population_size);//:0  
     
-    const uint64_t fixed_seed = 12345; // Choose any constant value
-    CMAParameters<> cmaparams(x0, sigma, population_size, fixed_seed);
+    //const uint64_t fixed_seed = 12345; // Choose any constant value
+    //CMAParameters<> cmaparams(x0, sigma, population_size, fixed_seed);
 
     FitFunc eval = [](const double *x, const int N) -> double { return 0.0; }; //:0
     ESOptimizer<customCMAStrategy,CMAParameters<>> optim(eval, cmaparams);//:0
