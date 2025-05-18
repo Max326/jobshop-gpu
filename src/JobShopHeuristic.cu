@@ -113,7 +113,8 @@ void JobShopHeuristic::SolveBatchNew(
     float* results,
     int numProblems,
     int numWeights,
-    int maxOpsPerProblem 
+    int maxOpsPerProblem,
+    cudaStream_t stream = 0
 )
 {
     int threads = 64;
@@ -122,7 +123,10 @@ void JobShopHeuristic::SolveBatchNew(
 
     cudaDeviceSetLimit(cudaLimitStackSize, 4096);
 
-    SolveManyWeightsKernel<<<blocks, threads, sharedMemSize>>>(
+    int reset_value = 0;
+    cudaMemcpyToSymbol(gpu_error_flag, &reset_value, sizeof(int), 0, cudaMemcpyHostToDevice);
+
+    SolveManyWeightsKernel<<<blocks, threads, sharedMemSize, stream>>>(
         problems, evaluators, ops_working, results, numProblems, maxOpsPerProblem
     );
     cudaDeviceSynchronize();
@@ -235,6 +239,11 @@ __global__ void SolveManyWeightsKernel(
     float* results,
     int numProblems,
     int maxOpsPerProblem) {
+
+    if (gpu_error_flag) { // Check at the very beginning
+        return;
+    }
+
     extern __shared__ float shared_makespans[];
 
     int weightSet = blockIdx.x;
@@ -317,15 +326,15 @@ __global__ void SolveManyWeightsKernel(
  */
                         float features[1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES] = {0.0f};
 
-                        features[0] = static_cast<float>(start_time) - machine_times[machineID];
+                        features[0] = static_cast<float>(start_time) - machine_times[machineID]; // wasted time
 
                         for (int i = 1; i < MAX_MACHINES + 1; ++i) {
-                            features[i] = static_cast<float>(local_makespan - machine_times[i - 1]);
+                            features[i] = static_cast<float>(local_makespan - machine_times[i - 1]); // envelope
                         }
-                        features[1 + machineID] = static_cast<float>(local_makespan - (start_time + pTime));
-                        features[1 + MAX_MACHINES + machineID] = 1.0f;
-                        features[1 + 2 * MAX_MACHINES + operation.type] = 1.0f;
-                        
+                        features[1 + machineID] = static_cast<float>(local_makespan - (start_time + pTime)); // envelope for current machine
+
+                        features[1 + MAX_MACHINES + machineID] = 1.0f;  // one hot machine encoding
+                        features[1 + 2 * MAX_MACHINES + operation.type] = 1.0f; // one hot operation type encoding
                         
 
                         // Print features
@@ -363,13 +372,14 @@ __global__ void SolveManyWeightsKernel(
                                 //min_val, min_idx, max_val, max_idx);
 }
                         
-                        const float SCALE_FACTOR = 100.0f;
-                        // normalize nn inputs (it may like it better)
-                        features[0] /= SCALE_FACTOR;
-                        for (int i = 1; i < MAX_MACHINES + 1; ++i) {
-                            features[i] /= SCALE_FACTOR;
-                        }
-                        features[1 + machineID] /= SCALE_FACTOR;
+                        // const float SCALE_FACTOR = 100.0f;
+                        // // normalize nn inputs (it may like it better)
+                        // features[0] /= SCALE_FACTOR;
+                        // for (int i = 1; i < MAX_MACHINES + 1; ++i) {
+                        //     features[i] /= SCALE_FACTOR;
+                        // }
+                        // features[1 + machineID] /= SCALE_FACTOR;
+
                         float score = nn_eval.Evaluate(features);//! Error: evaluate returns 0 or nans
 
                         // Debug: Score print 

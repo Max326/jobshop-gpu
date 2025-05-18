@@ -25,6 +25,8 @@
 
 #define MAX_NN_LAYERS 4
 
+extern __device__ __managed__ int gpu_error_flag;
+
 class NeuralNetwork
 {
 public:
@@ -45,7 +47,6 @@ public:
 
 	std::vector<float> Forward(const std::vector<float>& input);
 	static std::vector<NeuralNetwork> LoadBatchFromJson(const std::string& filename);
-
 
 	void SaveToJson(const std::string& filename) const {
 		FileManager::EnsureDataDirExists();
@@ -90,45 +91,53 @@ public:
 	void FlattenParams();
 
 	static int CalculateTotalParameters(const std::vector<int>& topology) {
-        int total = 0;
-        for (size_t i = 1; i < topology.size(); ++i) {
-            // Wagi i biasy dla warstwy
-            total += topology[i-1] * topology[i] + topology[i];
-        }
-        return total;
-    }
+		int total = 0;
+		for(size_t i = 1; i < topology.size(); ++i) {
+			// Wagi i biasy dla warstwy
+			total += topology[i - 1] * topology[i] + topology[i];
+		}
+		return total;
+	}
 
-    struct DeviceEvaluator {
-        const float* weights;  // Flattened weights on device
-        const float* biases;   // Flattened biases on device
-        int d_topology[MAX_NN_LAYERS]; // Embedded topology array
-        int num_layers;
+	
+	struct DeviceEvaluator {
+		const float* weights;			// Flattened weights on device
+		const float* biases;			// Flattened biases on device
+		int d_topology[MAX_NN_LAYERS];	// Embedded topology array
+		int num_layers;
 
-        __device__ float Evaluate(const float* features) const;
-    };
 
-    __host__ DeviceEvaluator GetDeviceEvaluator() const {
-        if(!cudaData || !cudaData->d_weights || !cudaData->d_biases) {
-            throw std::runtime_error("CUDA data not initialized for GetDeviceEvaluator");
-        }
-        if (topology.size() > MAX_NN_LAYERS) {
-            throw std::runtime_error("Network topology exceeds MAX_NN_LAYERS defined in DeviceEvaluator.");
-        }
+		__device__ void ReportAndAbort(const char* msg) const {
+			atomicExch(&gpu_error_flag, 1);
+			__threadfence_system();
+			asm("trap;");
+		}
 
-        DeviceEvaluator eval;
-        eval.weights = cudaData->d_weights;
-        eval.biases = cudaData->d_biases;
-        
-        for (size_t i = 0; i < topology.size(); ++i) {
-            eval.d_topology[i] = topology[i];
-        }
-        // Pad remaining elements if topology.size() < MAX_NN_LAYERS
-        for (size_t i = topology.size(); i < MAX_NN_LAYERS; ++i) {
-            eval.d_topology[i] = 0; 
-        }
-        eval.num_layers = static_cast<int>(topology.size());
-        return eval;
-    }
+		__device__ float Evaluate(const float* features) const;
+	};
+
+	__host__ DeviceEvaluator GetDeviceEvaluator() const {
+		if(!cudaData || !cudaData->d_weights || !cudaData->d_biases) {
+			throw std::runtime_error("CUDA data not initialized for GetDeviceEvaluator");
+		}
+		if(topology.size() > MAX_NN_LAYERS) {
+			throw std::runtime_error("Network topology exceeds MAX_NN_LAYERS defined in DeviceEvaluator.");
+		}
+
+		DeviceEvaluator eval;
+		eval.weights = cudaData->d_weights;
+		eval.biases = cudaData->d_biases;
+
+		for(size_t i = 0; i < topology.size(); ++i) {
+			eval.d_topology[i] = topology[i];
+		}
+		// Pad remaining elements if topology.size() < MAX_NN_LAYERS
+		for(size_t i = topology.size(); i < MAX_NN_LAYERS; ++i) {
+			eval.d_topology[i] = 0;
+		}
+		eval.num_layers = static_cast<int>(topology.size());
+		return eval;
+	}
 #define CUDA_CHECK(call)                                                                                \
 	{                                                                                                   \
 		cudaError_t err = (call);                                                                       \
@@ -171,13 +180,12 @@ private:
 			throw std::invalid_argument("NeuralNetwork: Topology cannot be empty");
 		}
 
-		if (talk){
+		if(talk) {
 			std::cout << "=== DATA VALIDATION ===\n";
 			std::cout << "Topology: ";
 			for(auto t: topology)
 				std::cout << t << " ";
 		}
-
 
 		// std::cout << "\nFirst weight layer: " << weights[0][0] << ", " << weights[0][1] << "...\n";
 		// std::cout << "First bias: " << biases[0][0] << "\n";

@@ -146,10 +146,17 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
     // Kernel
     auto t5 = std::chrono::high_resolution_clock::now();
 
+    cudaStream_t stream; // I don't know if this helps
+    cudaStreamCreate(&stream);
+
     JobShopHeuristic::SolveBatchNew(
         d_problems_, d_evaluators, d_ops_working, d_results, 
-        num_problems_to_evaluate_, nn_candidate_count, max_ops_per_problem_
+        num_problems_to_evaluate_, nn_candidate_count, max_ops_per_problem_,
+        stream
     );
+
+    cudaStreamSynchronize(stream);
+
     cudaError_t kernelErr = cudaGetLastError();
     if(kernelErr != cudaSuccess) {
         std::cerr << "Kernel error during CMA-ES evaluation: " << cudaGetErrorString(kernelErr) << std::endl;

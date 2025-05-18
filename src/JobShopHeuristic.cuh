@@ -80,7 +80,8 @@ public:
 		float* results,
 		int numProblems,
 		int numWeights,
-        int maxOpsPerProblem
+        int maxOpsPerProblem,
+        cudaStream_t stream
     );
 
     void PrintSchedule(const CPUSolution& solution, JobShopData data);
