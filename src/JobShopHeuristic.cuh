@@ -22,7 +22,7 @@
 #define MAX_JOB_TYPES 15
 #define MAX_JOBS	 30
 #define MAX_OPS		 15
-#define MAX_OP_TYPES 15
+#define MAX_OP_TYPES 20
 
 // Structure for scheduled operation
 struct OperationSchedule {
@@ -80,7 +80,8 @@ public:
 		float* results,
 		int numProblems,
 		int numWeights,
-        int maxOpsPerProblem
+        int maxOpsPerProblem,
+        cudaStream_t stream
     );
 
     void PrintSchedule(const CPUSolution& solution, JobShopData data);

@@ -8,7 +8,7 @@ JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const 
     : nn_topology_(nn_topology)
 {
     // all problems at once 
-    cpu_problems_ = JobShopData::LoadFromParallelJson(problem_file, 400);//TODO fix nummber of problem assignment 
+    cpu_problems_ = JobShopData::LoadFromParallelJson(problem_file, 5000);//TODO fix nummber of problem assignment 
     if (cpu_problems_.empty())
         throw std::runtime_error("No problems loaded!");
 
@@ -77,59 +77,62 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
 
     // Tworzenie DeviceEvaluatorów
     auto t1 = std::chrono::high_resolution_clock::now();
-    std::vector<float> all_weights;
-    std::vector<float> all_biases;
-    all_weights.reserve(nn_candidate_count * nn_total_params_ * 2); // przybliżona rezerwacja
+    std::vector<float> all_weights; // This seems unused for DeviceEvaluator population, consider removing if not used elsewhere.
+    std::vector<float> all_biases;  // This seems unused for DeviceEvaluator population, consider removing if not used elsewhere.
+    all_weights.reserve(nn_candidate_count * nn_total_params_ * 2); 
     all_biases.reserve(nn_candidate_count * nn_total_params_);
     
-    // Alokujemy wszystko na raz
+    // allocate all at once
     std::vector<NeuralNetwork::DeviceEvaluator> host_evaluators(nn_candidate_count);
+    std::vector<NeuralNetwork> active_neural_networks; // Store NeuralNetwork objects here
+    active_neural_networks.reserve(nn_candidate_count);
     
-    // Przetwarzamy kandydatów wsadowo
+    
     for (int r = 0; r < nn_candidate_count; ++r) {
-        // Potrzebujemy przechować wagi przed spłaszczeniem
-        std::vector<std::vector<float>> weights;
-        std::vector<std::vector<float>> biases;
+        
+        std::vector<std::vector<float>> weights_for_net; // Renamed to avoid conflict
+        std::vector<std::vector<float>> biases_for_net;  // Renamed to avoid conflict
         int paramIdx = 0;
         
         for (size_t i = 1; i < nn_topology_.size(); ++i) {
             int prevLayerSize = nn_topology_[i-1];
             int currLayerSize = nn_topology_[i];
             
-            // Prealokujemy wektory
+
             std::vector<float> layerWeights(prevLayerSize * currLayerSize);
             std::vector<float> layerBiases(currLayerSize);
             
             for (int w = 0; w < prevLayerSize * currLayerSize; ++w)
                 layerWeights[w] = static_cast<float>(candidates(paramIdx++, r));
             
-            weights.push_back(layerWeights);
+            weights_for_net.push_back(layerWeights);
             
             for (int b = 0; b < currLayerSize; ++b)
                 layerBiases[b] = static_cast<float>(candidates(paramIdx++, r));
             
-            biases.push_back(layerBiases);
+            biases_for_net.push_back(layerBiases);
         }
      
-        NeuralNetwork net(nn_topology_, &weights, &biases);
-        host_evaluators[r] = net.GetDeviceEvaluator();
+        // Create NeuralNetwork and store it in the vector to keep it alive
+        active_neural_networks.emplace_back(nn_topology_, &weights_for_net, &biases_for_net);
+        host_evaluators[r] = active_neural_networks.back().GetDeviceEvaluator();
     }
     auto t2 = std::chrono::high_resolution_clock::now();
 
-    // Kopiowanie DeviceEvaluatorów na GPU
+    // Copy to GPU
     NeuralNetwork::DeviceEvaluator* d_evaluators = nullptr;
     cudaMalloc(&d_evaluators, sizeof(NeuralNetwork::DeviceEvaluator) * nn_candidate_count);
     cudaMemcpy(d_evaluators, host_evaluators.data(), sizeof(NeuralNetwork::DeviceEvaluator) * nn_candidate_count, cudaMemcpyHostToDevice);
     auto t3 = std::chrono::high_resolution_clock::now();
 
-    // Przygotowanie ops_working
+    // Prepare ops working
     std::vector<GPUOperation> ops_working(nn_candidate_count * num_problems_to_evaluate_ * max_ops_per_problem_);
     for (int w = 0; w < nn_candidate_count; ++w) {
       for (int p = 0; p < num_problems_to_evaluate_; ++p) {
         int base = (w * num_problems_to_evaluate_ + p) * max_ops_per_problem_;
         int opsOffset = cpu_batch_data_.operationsOffsets[p];
         int opsCount = cpu_batch_data_.operationsOffsets[p+1] - cpu_batch_data_.operationsOffsets[p];
-        // Zawsze kopiuj świeże dane z CPU
+        // Copy data from CPU
         memcpy(&ops_working[base], &cpu_batch_data_.operations[opsOffset], opsCount * sizeof(GPUOperation));
       }
     }
@@ -146,10 +149,16 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
     // Kernel
     auto t5 = std::chrono::high_resolution_clock::now();
 
+    cudaStream_t stream; // I don't know if this helps :3
+    cudaStreamCreate(&stream);
+
     JobShopHeuristic::SolveBatchNew(
         d_problems_, d_evaluators, d_ops_working, d_results, 
-        num_problems_to_evaluate_, nn_candidate_count, max_ops_per_problem_
+        num_problems_to_evaluate_, nn_candidate_count, max_ops_per_problem_, stream
     );
+
+    cudaStreamSynchronize(stream);
+
     cudaError_t kernelErr = cudaGetLastError();
     if(kernelErr != cudaSuccess) {
         std::cerr << "Kernel error during CMA-ES evaluation: " << cudaGetErrorString(kernelErr) << std::endl;
@@ -174,6 +183,7 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
     cudaFree(d_ops_working);
     cudaFree(d_results);
 
+   
     std::cout << "[TIMER][CPU] DeviceEvaluator creation: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() << " ms, "
               << "DeviceEvaluator H2D: "
@@ -189,6 +199,18 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
               << "Total evaluateCandidates: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(t8 - t0).count() << " ms"
               << std::endl;
+
+// Check the sizes
+    int total_weights = 0;
+    int total_biases = 0;
+    for(int i = 1; i < nn_topology_.size(); i++) {
+        total_weights += nn_topology_[i-1] * nn_topology_[i];
+        total_biases += nn_topology_[i];
+    }
+
+    std::cout << "[DEBUG] Total weights calculated: " << total_weights << std::endl;
+    std::cout << "[DEBUG] Total biases calculated: " << total_biases << std::endl;
+    std::cout << "[DEBUG] Total parameters: " << nn_total_params_ << std::endl;
 
     return fvalues;
 }
