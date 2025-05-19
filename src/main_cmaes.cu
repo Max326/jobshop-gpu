@@ -24,9 +24,9 @@ Eigen::MatrixXd GenerateTestWeights(int params, int candidates, float min=-5.0f,
 
 int main(int argc, char *argv[]) {
     const std::vector<int> topology = {86, 32, 16, 1};
-    const int batch_size = 50;      // Problems per evaluation
+    const int batch_size = 1;      // Problems per evaluation
     const std::string problem_file = "test_10k.json";
-    const int population_size = 192;  // Number of weight sets to test
+    const int population_size = 1;  // Number of weight sets to test
 
     try {
         // 1. Initialize gpu_evaluator
@@ -36,6 +36,13 @@ int main(int argc, char *argv[]) {
         // 2. Generate test weights directly
         const int nn_weights_count = NeuralNetwork::CalculateTotalParameters(topology);
         Eigen::MatrixXd candidates = GenerateTestWeights(nn_weights_count, population_size);
+
+        for (int p = 0; p < nn_weights_count; ++p) {
+            if (std::isnan(candidates(p, 0))) {
+                std::cerr << "[ERROR] NaN detected in generated weights at param " << p << std::endl;
+                return 1;
+            }
+        }        
         
         std::cout << "[DIAG] Generated " << population_size << " weight sets with "
                   << nn_weights_count << " parameters each\n";
