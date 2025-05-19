@@ -8,7 +8,7 @@ JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const 
     : nn_topology_(nn_topology)
 {
     // all problems at once 
-    cpu_problems_ = JobShopData::LoadFromParallelJson(problem_file, 5000);//TODO fix nummber of problem assignment 
+    cpu_problems_ = JobShopData::LoadFromParallelJson(problem_file, 300);//TODO fix nummber of problem assignment 
     if (cpu_problems_.empty())
         throw std::runtime_error("No problems loaded!");
 
@@ -177,7 +177,11 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
     Eigen::VectorXd fvalues(nn_candidate_count);
     for (int r = 0; r < nn_candidate_count; ++r)
         fvalues[r] = static_cast<double>(host_results[r]);
+
+    
     auto t8 = std::chrono::high_resolution_clock::now();
+    double min_makespan = fvalues.minCoeff();
+    std::cout << "[INFO] Best average makespan: " << min_makespan << std::endl;
 
     cudaFree(d_evaluators);
     cudaFree(d_ops_working);

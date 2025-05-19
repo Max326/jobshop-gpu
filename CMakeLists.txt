@@ -62,3 +62,6 @@ target_link_libraries(JobShopScheduler PRIVATE nlohmann_json::nlohmann_json cmae
 
 # Data files
 file(COPY ${CMAKE_SOURCE_DIR}/data DESTINATION ${CMAKE_BINARY_DIR})
+
+#CMAES
+set(CMAKE_CXX_FLAGS "-O3")

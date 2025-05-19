@@ -13,7 +13,7 @@ int main(int argc, char *argv[])
 {
     const std::vector<int> topology = {101, 32, 16, 1};
     const int batch_size = 50;
-    const std::string problem_file = "test_10k.json";
+    const std::string problem_file = "sliwa1.json";
     int population_size = 192;//:0
 
     int nn_weights_count = NeuralNetwork::CalculateTotalParameters(topology);//:0
@@ -33,6 +33,7 @@ int main(int argc, char *argv[])
     
     double sigma = 0.1;//:0
     CMAParameters<> cmaparams(x0, sigma, population_size);//:0  
+    cmaparams.set_algo(sepaCMAES);
     
     //const uint64_t fixed_seed = 12345; // Choose any constant value
     //CMAParameters<> cmaparams(x0, sigma, population_size, fixed_seed);
@@ -41,6 +42,7 @@ int main(int argc, char *argv[])
     ESOptimizer<customCMAStrategy,CMAParameters<>> optim(eval, cmaparams);//:0
 
     int batch_start = 0;
+    int global_iter=0;
 
     while(!optim.stop() && gpu_evaluator.SetCurrentBatch(batch_start, batch_size)) {
         dMat candidates = optim.ask();//:0
@@ -48,7 +50,9 @@ int main(int argc, char *argv[])
         optim.tell();//:0
         optim.inc_iter();//:0
         batch_start += batch_size;
+        global_iter++;
     }
     //std::cout << optim.get_solutions() << std::endl;//:0
+    std::cout << "Global iterations: " << global_iter << std::endl;
     return 0;
 }
