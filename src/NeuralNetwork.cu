@@ -16,11 +16,10 @@ void NeuralNetwork::InitializeCudaData() {
 	/* std::cout << "\nFlattened weights size: " << flattenedWeights.size() << "\n";
 	std::cout << "Flattened biases size: " << flattenedBiases.size() << "\n"; */
 
-
 	/* std::cout << "First few weights: ";
 	for(int i = 0; i < std::min(5, (int)flattenedWeights.size()); i++)
-	 	std::cout << flattenedWeights[i] << " ";
-	    std::cout << "\n"; */
+		std::cout << flattenedWeights[i] << " ";
+		std::cout << "\n"; */
 
 	layerOffsets.resize(weights.size());
 	biasOffsets.resize(biases.size());
@@ -51,9 +50,9 @@ void NeuralNetwork::InitializeCudaData() {
 	CUDA_CHECK(cudaMalloc(&cudaData->d_input, max_layer_size * sizeof(float)));
 	CUDA_CHECK(cudaMalloc(&cudaData->d_output, max_layer_size * sizeof(float)));
 
-    // 4. Initialize input and output buffers to zero
-    CUDA_CHECK(cudaMemset(cudaData->d_weights, 0, total_weights * sizeof(float)));
-    CUDA_CHECK(cudaMemset(cudaData->d_biases, 0, total_biases * sizeof(float)));
+	// 4. Initialize weight buffers to zero
+	CUDA_CHECK(cudaMemset(cudaData->d_weights, 0.0f, total_weights * sizeof(float)));
+	CUDA_CHECK(cudaMemset(cudaData->d_biases, 0.0f, total_biases * sizeof(float)));
 
 	// 5. Copy weights and biases to GPU
 	size_t weight_offset = 0;
@@ -144,172 +143,166 @@ NeuralNetwork &NeuralNetwork::operator=(NeuralNetwork &&other) noexcept {
 
 // Funkcja aktywacji scaleTanh2
 __device__ float ScaleTanh2(float x) {
-    // Sprawdź, czy wejście jest NaN lub Inf
-    if(isnan(x) || isinf(x)) {
-        printf("[ERROR] ScaleTanh2 received invalid input: %f\n", x);
-        return 0.0f;
-    }
+	// Sprawdź, czy wejście jest NaN lub Inf
+	if(isnan(x) || isinf(x)) {
+		printf("[ERROR] ScaleTanh2 received invalid input: %f\n", x);
+		return 0.0f;
+	}
 
-    constexpr float shift = 3.5f;
-    constexpr float rshift = 1.0f / shift;
-    if(x >= 0.f) {
-        if(x >= shift)
-            return 1.0f + (x - shift) * 0.01;
-        float tmp = (x - shift) * rshift;
-        return 1.0f - tmp * tmp * tmp * tmp;
-    } else if(x >= -shift) {
-        float tmp = (x + shift) * rshift;
-        return -1.0f + tmp * tmp * tmp * tmp;
-    } else {
-        return -1.0f - (shift - x) * 0.01;
-    }
+	constexpr float shift = 3.5f;
+	constexpr float rshift = 1.0f / shift;
+	if(x >= 0.f) {
+		if(x >= shift)
+			return 1.0f + (x - shift) * 0.01;
+		float tmp = (x - shift) * rshift;
+		return 1.0f - tmp * tmp * tmp * tmp;
+	} else if(x >= -shift) {
+		float tmp = (x + shift) * rshift;
+		return -1.0f + tmp * tmp * tmp * tmp;
+	} else {
+		return -1.0f - (shift - x) * 0.01;
+	}
 }
 
 __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features) const {
-    const int MAX_LAYER_SIZE = 86;   
-    float activations[MAX_LAYER_SIZE]; 
+	const int MAX_LAYER_SIZE = 86;
+	float activations[MAX_LAYER_SIZE];
 
-    // Sprawdź poprawność cechy wejściowe
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        for(int i = 0; i < this->d_topology[0]; i++) {
-            if(isnan(features[i]) || isinf(features[i])) {
-                printf("[ERROR] Invalid input feature at index %d: %f\n", i, features[i]);
-                NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid input feature");
-                return 0.0f;
-            }
-        }
-    }
+	// Sprawdź poprawność cechy wejściowe
+	if(threadIdx.x == 0 && blockIdx.x == 0) {
+		for(int i = 0; i < this->d_topology[0]; i++) {
+			if(isnan(features[i]) || isinf(features[i])) {
+				printf("[ERROR] Invalid input feature at index %d: %f\n", i, features[i]);
+				NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid input feature");
+				return 0.0f;
+			}
+		}
+	}
 
-    // 1. Validate input size using d_topology
-    if(this->num_layers == 0 || this->d_topology[0] > MAX_LAYER_SIZE || this->d_topology[0] <= 0) {
-        if (threadIdx.x == 0 && blockIdx.x == 0) {
-            printf("[ERROR] Invalid topology configuration\n");
-            NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid topology configuration");
-        }
+	// 1. Validate input size using d_topology
+	if(this->num_layers == 0 || this->d_topology[0] > MAX_LAYER_SIZE || this->d_topology[0] <= 0) {
+		if(threadIdx.x == 0 && blockIdx.x == 0) {
+			printf("[ERROR] Invalid topology configuration\n");
+		}
+		NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid topology configuration");
 
-        return 0.0f; 
-    }
+		return 0.0f;
+	}
 
-    // 2. Copy input (without printing)
-    for(int i = 0; i < this->d_topology[0]; i++) {
-        activations[i] = features[i];
-    }
+	// 2. Copy input (without printing)
+	for(int i = 0; i < this->d_topology[0]; i++) {
+		activations[i] = features[i];
+	}
 
-    int weight_offset = 0;
-    int bias_offset = 0;
-    
-    // Calculate totals without printing
-    int total_weights_for_eval = 0;
-    int total_biases_for_eval = 0;
-    for(int i = 1; i < this->num_layers; i++) {
-        total_weights_for_eval += this->d_topology[i - 1] * this->d_topology[i];
-        total_biases_for_eval += this->d_topology[i];
-    }
+	int weight_offset = 0;
+	int bias_offset = 0;
 
-    for(int layer = 1; layer < this->num_layers; layer++) {
-        int in_size = this->d_topology[layer - 1];
-        int out_size = this->d_topology[layer];
+	// Calculate totals without printing
+	int total_weights_for_eval = 0;
+	int total_biases_for_eval = 0;
+	for(int i = 1; i < this->num_layers; i++) {
+		total_weights_for_eval += this->d_topology[i - 1] * this->d_topology[i];
+		total_biases_for_eval += this->d_topology[i];
+	}
 
-        if(out_size > MAX_LAYER_SIZE || out_size <= 0 || in_size <= 0) {
-            if (threadIdx.x == 0 && blockIdx.x == 0) {
-                printf("[ERROR] Invalid layer dimensions at layer %d\n", layer);
-                NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid layer dimensions");
-            }
+	for(int layer = 1; layer < this->num_layers; layer++) {
+		int in_size = this->d_topology[layer - 1];
+		int out_size = this->d_topology[layer];
 
-            return 0.0f; 
-        }
+		if(out_size > MAX_LAYER_SIZE || out_size <= 0 || in_size <= 0) {
+			if(threadIdx.x == 0 && blockIdx.x == 0) {
+				printf("[ERROR] Invalid layer dimensions at layer %d\n", layer);
+			}
+			NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid layer dimensions");
 
-        for(int neuron = 0; neuron < out_size; neuron++) {
-            if(bias_offset + neuron >= total_biases_for_eval) {
-                if (threadIdx.x == 0 && blockIdx.x == 0) {
-                    printf("[ERROR] Bias access out of bounds: %d >= %d\n", 
-                           bias_offset + neuron, total_biases_for_eval);
-                    NeuralNetwork::DeviceEvaluator::ReportAndAbort("Bias access out of bounds");
+			return 0.0f;
+		}
 
-                }
-                return 0.0f;
-            }
-            float sum = this->biases[bias_offset + neuron];
+		for(int neuron = 0; neuron < out_size; neuron++) {
+			if(bias_offset + neuron >= total_biases_for_eval) {
+				if(threadIdx.x == 0 && blockIdx.x == 0) {
+					printf("[ERROR] Bias access out of bounds: %d >= %d\n",
+						   bias_offset + neuron, total_biases_for_eval);
+				}
+				NeuralNetwork::DeviceEvaluator::ReportAndAbort("Bias access out of bounds");
+				return 0.0f;
+			}
+			float sum = this->biases[bias_offset + neuron];
 
-            // Sprawdzamy bias
-            if(isnan(sum) || isinf(sum)) {
-                if (threadIdx.x == 0 && blockIdx.x == 0) {
-                    printf("[ERROR] Invalid bias value at layer %d, neuron %d: %f\n", 
-                           layer, neuron, sum);
-                    NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid bias value");
+			// Sprawdzamy bias
+			if(isnan(sum) || isinf(sum)) {
+				if(threadIdx.x == 0 && blockIdx.x == 0) {
+					printf("[ERROR] Invalid bias value at layer %d, neuron %d: %f\n",
+						   layer, neuron, sum);
+				}
+				NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid bias value");
 
-                }
-                return 0.0f;
-            }
+				return 0.0f;
+			}
 
-            for(int i = 0; i < in_size; i++) {
-                int weight_idx = weight_offset + neuron * in_size + i;
-                if(weight_idx >= total_weights_for_eval) {
-                    if (threadIdx.x == 0 && blockIdx.x == 0) {
-                        printf("[ERROR] Weight access out of bounds: %d >= %d\n", 
-                               weight_idx, total_weights_for_eval);
-                        NeuralNetwork::DeviceEvaluator::ReportAndAbort("Weight access out of bounds");
+			for(int i = 0; i < in_size; i++) {
+				int weight_idx = weight_offset + neuron * in_size + i;
+				if(weight_idx >= total_weights_for_eval) {
+					if(threadIdx.x == 0 && blockIdx.x == 0) {
+						printf("[ERROR] Weight access out of bounds: %d >= %d\n",
+							   weight_idx, total_weights_for_eval);
+					}
+					NeuralNetwork::DeviceEvaluator::ReportAndAbort("Weight access out of bounds");
+					return 0.0f;
+				}
 
-                    }
-                    return 0.0f;
-                }
-                
-                // Sprawdzamy wagę i aktywację
-                if(isnan(this->weights[weight_idx]) || isinf(this->weights[weight_idx])) {
-                    if (threadIdx.x == 0 && blockIdx.x == 0) {
-                        printf("[ERROR] Invalid weight at layer %d, neuron %d, input %d: %f\n", 
-                               layer, neuron, i, this->weights[weight_idx]);
-                        NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid weight");
+				// Sprawdzamy wagę i aktywację
+				if(isnan(this->weights[weight_idx]) || isinf(this->weights[weight_idx])) {
+					if(threadIdx.x == 0 && blockIdx.x == 0) {
+						printf("[ERROR] Invalid weight at layer %d, neuron %d, input %d: %f\n",
+							   layer, neuron, i, this->weights[weight_idx]);
+					}
+					NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid weight");
+					return 0.0f;
+				}
 
-                    }
-                    return 0.0f;
-                }
-                
-                if(isnan(activations[i]) || isinf(activations[i])) {
-                    if (threadIdx.x == 0 && blockIdx.x == 0) {
-                        printf("[ERROR] Invalid activation at layer %d, input %d: %f\n", 
-                               layer-1, i, activations[i]);
-                        NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid activation");
+				if(isnan(activations[i]) || isinf(activations[i])) {
+					if(threadIdx.x == 0 && blockIdx.x == 0) {
+						printf("[ERROR] Invalid activation at layer %d, input %d: %f\n",
+							   layer - 1, i, activations[i]);
+					}
+					NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid activation");
+					return 0.0f;
+				}
 
-                    }
-                    return 0.0f;
-                }
-                
-                sum += activations[i] * this->weights[weight_idx];
-            }
-            
-            // Sprawdzamy sumę przed aktywacją
-            if(isnan(sum) || isinf(sum)) {
-                if (threadIdx.x == 0 && blockIdx.x == 0) {
-                    printf("[ERROR] Invalid sum at layer %d, neuron %d: %f\n", 
-                           layer, neuron, sum);
-                    NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid sum");
-                }
-                return 0.0f;
-            }
-            
-            activations[neuron] = ScaleTanh2(sum);
-        }
+				sum += activations[i] * this->weights[weight_idx];
+			}
 
-        weight_offset += in_size * out_size;
-        bias_offset += out_size;
-    }
+			// Sprawdzamy sumę przed aktywacją
+			if(isnan(sum) || isinf(sum)) {
+				if(threadIdx.x == 0 && blockIdx.x == 0) {
+					printf("[ERROR] Invalid sum at layer %d, neuron %d: %f\n",
+						   layer, neuron, sum);
+				}
+				NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid sum");
+				return 0.0f;
+			}
 
-    float final_output = (this->d_topology[this->num_layers - 1] == 1) ? 
-                        activations[0] : 0.0f;
+			activations[neuron] = ScaleTanh2(sum);
+		}
 
-    // Print final output only for first thread and if it's non-zero
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        if(isnan(final_output) || isinf(final_output)) {
-            printf("[ERROR] Final output is invalid: %f\n", final_output);
-        NeuralNetwork::DeviceEvaluator::ReportAndAbort("Final output is invalid");
-        } else if(final_output != 0.0f) {
+		weight_offset += in_size * out_size;
+		bias_offset += out_size;
+	}
 
-            //printf("[DEBUG] Block %d output: %.3f\n", blockIdx.x, final_output);
-        }
-    }
-    
-    return final_output;
+	float final_output = (this->d_topology[this->num_layers - 1] == 1) ? activations[0] : 0.0f;
+
+	// Print final output only for first thread and if it's non-zero
+	if(threadIdx.x == 0 && blockIdx.x == 0) {
+		if(isnan(final_output) || isinf(final_output)) {
+			printf("[ERROR] Final output is invalid: %f\n", final_output);
+			NeuralNetwork::DeviceEvaluator::ReportAndAbort("Final output is invalid");
+		} else if(final_output != 0.0f) {
+			// printf("[DEBUG] Block %d output: %.3f\n", blockIdx.x, final_output);
+		}
+	}
+
+	return final_output;
 }
 
 void NeuralNetwork::GenerateWeights() {
@@ -348,21 +341,21 @@ void NeuralNetwork::FlattenParams() {
 	}
 }
 
-std::vector<NeuralNetwork> NeuralNetwork::LoadBatchFromJson(const std::string& filename) {
-    std::string full_path = FileManager::GetFullPath(filename);
-    std::ifstream in(full_path);
-    if(!in) throw std::runtime_error("Cannot open weights file: " + full_path);
+std::vector<NeuralNetwork> NeuralNetwork::LoadBatchFromJson(const std::string &filename) {
+	std::string full_path = FileManager::GetFullPath(filename);
+	std::ifstream in(full_path);
+	if(!in) throw std::runtime_error("Cannot open weights file: " + full_path);
 
-    nlohmann::json all_nets;
-    in >> all_nets;
-    in.close();
+	nlohmann::json all_nets;
+	in >> all_nets;
+	in.close();
 
-    std::vector<NeuralNetwork> networks;
-    for(const auto& j : all_nets) {
-        std::vector<int> topology = j["topology"].get<std::vector<int>>();
-        std::vector<std::vector<float>> weights = j["weights"].get<std::vector<std::vector<float>>>();
-        std::vector<std::vector<float>> biases = j["biases"].get<std::vector<std::vector<float>>>();
-        networks.emplace_back(topology, &weights, &biases);
-    }
-    return networks;
+	std::vector<NeuralNetwork> networks;
+	for(const auto &j: all_nets) {
+		std::vector<int> topology = j["topology"].get<std::vector<int>>();
+		std::vector<std::vector<float>> weights = j["weights"].get<std::vector<std::vector<float>>>();
+		std::vector<std::vector<float>> biases = j["biases"].get<std::vector<std::vector<float>>>();
+		networks.emplace_back(topology, &weights, &biases);
+	}
+	return networks;
 }
