@@ -251,6 +251,8 @@ __global__ void SolveManyWeightsKernel(
 
 	float makespan = 0.0f;
 
+    if(problemIdx >= numProblems) return;
+
 	if(problemIdx < numProblems) {
 		const GPUProblem problem = problems[problemIdx];
 		const NeuralNetwork::DeviceEvaluator& nn_eval = evaluators[weightSet];
@@ -331,37 +333,6 @@ __global__ void SolveManyWeightsKernel(
 						features[1 + MAX_MACHINES + machineID] = 1.0f;			 // one hot machine encoding
 						features[1 + 2 * MAX_MACHINES + operation.type] = 1.0f;	 // one hot operation type encoding
 
-						// Print features
-						if(weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
-							// printf("[DEBUG] Features (pierwsze 10): ");
-							for(int i = 0; i < min(10, 1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES); i++) {
-								// printf("%.2f ", features[i]);
-							}
-							// printf("...\n");
-
-							// print some crucial values
-							// printf("[DEBUG] Feature[0] (start time): %.2f\n", features[0]);
-
-							// printf("[DEBUG] Features[1-%d] (machine times): ", MAX_MACHINES);
-							for(int i = 1; i <= min(5, MAX_MACHINES); i++) {
-								// printf("%.2f ", features[i]);
-							}
-
-							float min_val = FLT_MAX;
-							float max_val = -FLT_MAX;
-							int min_idx = -1, max_idx = -1;
-							for(int i = 0; i < (1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES); i++) {
-								if(features[i] < min_val) {
-									min_val = features[i];
-									min_idx = i;
-								}
-								if(features[i] > max_val) {
-									max_val = features[i];
-									max_idx = i;
-								}
-							}
-						}
-
 						const float SCALE_FACTOR = 100.0f;
 						// normalize nn inputs (it may like it better)
 						features[0] /= SCALE_FACTOR;
@@ -372,11 +343,7 @@ __global__ void SolveManyWeightsKernel(
 
 						float score = nn_eval.Evaluate(features);  //! Error: evaluate returns 0 or nans
 
-						// Debug: Score print
-						// if(weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
-						// 	printf("[KERNEL] Score=%.2f\n", score);
-						// }
-
+						
 						if(score > bestScoreValue) {
 							bestScoreValue = score;
 							bestJobID = jobID;
@@ -389,6 +356,11 @@ __global__ void SolveManyWeightsKernel(
 			}
 
 			if(bestJobID == -1) break;
+
+            // Debug: Score print
+            if (weightSet == 0 && problemIdx == 0 && threadIdx.x == 0 && bestJobID == 0 && bestOpID == 0) {
+                printf("[DEBUG] Initial Score=%.2f\n", bestScoreValue);
+            }
 
 			GPUJob& bestJob = problem.jobs[bestJobID];
 			GPUOperation& bestOperation = local_ops[bestJob.operationsOffset + bestOpID];
