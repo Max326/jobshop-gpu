@@ -77,19 +77,21 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
 
     // Tworzenie DeviceEvaluatorów
     auto t1 = std::chrono::high_resolution_clock::now();
-    std::vector<float> all_weights;
-    std::vector<float> all_biases;
-    all_weights.reserve(nn_candidate_count * nn_total_params_ * 2); // przybliżona rezerwacja
+    std::vector<float> all_weights; // This seems unused for DeviceEvaluator population, consider removing if not used elsewhere.
+    std::vector<float> all_biases;  // This seems unused for DeviceEvaluator population, consider removing if not used elsewhere.
+    all_weights.reserve(nn_candidate_count * nn_total_params_ * 2); 
     all_biases.reserve(nn_candidate_count * nn_total_params_);
     
     // Alokujemy wszystko na raz
     std::vector<NeuralNetwork::DeviceEvaluator> host_evaluators(nn_candidate_count);
+    std::vector<NeuralNetwork> active_neural_networks; // Store NeuralNetwork objects here
+    active_neural_networks.reserve(nn_candidate_count);
     
     // Przetwarzamy kandydatów wsadowo
     for (int r = 0; r < nn_candidate_count; ++r) {
         // Potrzebujemy przechować wagi przed spłaszczeniem
-        std::vector<std::vector<float>> weights;
-        std::vector<std::vector<float>> biases;
+        std::vector<std::vector<float>> weights_for_net; // Renamed to avoid conflict
+        std::vector<std::vector<float>> biases_for_net;  // Renamed to avoid conflict
         int paramIdx = 0;
         
         for (size_t i = 1; i < nn_topology_.size(); ++i) {
@@ -103,16 +105,17 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
             for (int w = 0; w < prevLayerSize * currLayerSize; ++w)
                 layerWeights[w] = static_cast<float>(candidates(paramIdx++, r));
             
-            weights.push_back(layerWeights);
+            weights_for_net.push_back(layerWeights);
             
             for (int b = 0; b < currLayerSize; ++b)
                 layerBiases[b] = static_cast<float>(candidates(paramIdx++, r));
             
-            biases.push_back(layerBiases);
+            biases_for_net.push_back(layerBiases);
         }
      
-        NeuralNetwork net(nn_topology_, &weights, &biases);
-        host_evaluators[r] = net.GetDeviceEvaluator();
+        // Create NeuralNetwork and store it in the vector to keep it alive
+        active_neural_networks.emplace_back(nn_topology_, &weights_for_net, &biases_for_net);
+        host_evaluators[r] = active_neural_networks.back().GetDeviceEvaluator();
     }
     auto t2 = std::chrono::high_resolution_clock::now();
 
@@ -181,6 +184,9 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
     cudaFree(d_ops_working);
     cudaFree(d_results);
 
+    // active_neural_networks will go out of scope here, and their destructors will be called,
+    // freeing the GPU memory for weights and biases. This is now safe as the kernel has finished.
+
     std::cout << "[TIMER][CPU] DeviceEvaluator creation: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() << " ms, "
               << "DeviceEvaluator H2D: "
@@ -196,6 +202,19 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
               << "Total evaluateCandidates: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(t8 - t0).count() << " ms"
               << std::endl;
+
+// Replace the debug prints at the end of EvaluateCandidates:
+    // Sprawdź, czy rozmiar wag i biasów jest poprawnie obliczany:
+    int total_weights = 0;
+    int total_biases = 0;
+    for(int i = 1; i < nn_topology_.size(); i++) {
+        total_weights += nn_topology_[i-1] * nn_topology_[i];
+        total_biases += nn_topology_[i];
+    }
+
+    std::cout << "[DEBUG] Total weights calculated: " << total_weights << std::endl;
+    std::cout << "[DEBUG] Total biases calculated: " << total_biases << std::endl;
+    std::cout << "[DEBUG] Total parameters: " << nn_total_params_ << std::endl;
 
     return fvalues;
 }
