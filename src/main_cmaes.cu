@@ -23,7 +23,7 @@ Eigen::MatrixXd GenerateTestWeights(int params, int candidates, float min=-5.0f,
 }
 
 int main(int argc, char *argv[]) {
-    const std::vector<int> topology = {86, 32, 16, 1};
+    const std::vector<int> topology = {101, 32, 16, 1};
     const int batch_size = 50;      // Problems per evaluation
     const std::string problem_file = "test_10k.json";
     const int population_size = 192;  // Number of weight sets to test

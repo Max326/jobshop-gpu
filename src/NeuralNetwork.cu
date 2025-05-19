@@ -165,7 +165,7 @@ __device__ float ScaleTanh2(float x) {
 }
 
 __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features) const {
-	const int MAX_LAYER_SIZE = 86;
+	const int MAX_LAYER_SIZE = maxLayerSize;
 	float activations[MAX_LAYER_SIZE];
 
 	// Sprawdź poprawność cechy wejściowe

@@ -104,7 +104,7 @@ public:
 		const float* biases;			// Flattened biases on device
 		int d_topology[MAX_NN_LAYERS];	// Embedded topology array
 		int num_layers;
-
+		int max_layer_size;
 
 		__device__ void ReportAndAbort(const char* msg) const {
 			atomicExch(&gpu_error_flag, 1);
@@ -167,7 +167,7 @@ public:
 	int GetNumLayers() const { return topology.size(); }
 
 private:
-	static const int maxLayerSize = 86;
+	static const int maxLayerSize = 101;
 	std::vector<float> flattenedWeights;
 	std::vector<float> flattenedBiases;
 
