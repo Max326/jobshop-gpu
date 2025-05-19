@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
 
     std::vector<double> x0(nn_weights_count, 0.0);
     for(int i = 0; i < nn_weights_count; i++) {
-        x0[i] = (double)rand() / RAND_MAX * 0.02 - 0.01;
+        x0[i] = (double)rand() / RAND_MAX * 0.01 - 0.005;
         
     }
     
