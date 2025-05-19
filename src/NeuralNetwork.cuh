@@ -3,7 +3,6 @@
 
 #pragma once
 
-// i don't know why this is needed, but it is (is it????)
 #ifndef __host__
 #	define __host__
 #endif
