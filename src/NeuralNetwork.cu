@@ -171,7 +171,8 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
 	// if (this->max_layer_size <= 0 || this->max_layer_size > 101 /*Match static const*/) { // Basic sanity check
     //     return 0.0f; // Or handle error differently if critical path allows
     // }
-	if(threadIdx.x == 0 && blockIdx.x == 0) {
+	
+	if(threadIdx.x == 0 && blockIdx.x == 0) { // don't uncomment, it reduces computing time xD
 		for(int i = 0; i < this->d_topology[0]; i++) {
 			if(isnan(features[i]) || isinf(features[i])) {
 				printf("[ERROR] Invalid input feature at index %d: %f\n", i, features[i]);

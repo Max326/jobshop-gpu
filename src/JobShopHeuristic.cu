@@ -283,11 +283,24 @@ __global__ void SolveManyWeightsKernel(
 
 	// Cooperatively load NN parameters from global to shared memory
 	// nn_eval_global_ptr.weights and nn_eval_global_ptr.biases point to global device memory
-	for(int i = threadIdx.x; i < nn_total_weights; i += blockDim.x) {
-		sm_weights[i] = nn_eval_global_ptr.weights[i];
+	
+	// Load weights cooperatively and coalesced
+	// Calculate how many elements each thread might load in total passes
+	int num_passes_weights = (nn_total_weights + blockDim.x - 1) / blockDim.x;
+	for (int pass = 0; pass < num_passes_weights; ++pass) {
+		int current_element_idx = pass * blockDim.x + threadIdx.x;
+		if (current_element_idx < nn_total_weights) {
+			sm_weights[current_element_idx] = nn_eval_global_ptr.weights[current_element_idx];
+		}
 	}
-	for(int i = threadIdx.x; i < nn_total_biases; i += blockDim.x) {
-		sm_biases[i] = nn_eval_global_ptr.biases[i];
+
+	// Load biases cooperatively and coalesced
+	int num_passes_biases = (nn_total_biases + blockDim.x - 1) / blockDim.x;
+	for (int pass = 0; pass < num_passes_biases; ++pass) {
+		int current_element_idx = pass * blockDim.x + threadIdx.x;
+		if (current_element_idx < nn_total_biases) {
+			sm_biases[current_element_idx] = nn_eval_global_ptr.biases[current_element_idx];
+		}
 	}
 	__syncthreads();  // IMPORTANT: Ensure all threads finish loading before any thread proceeds
 
@@ -366,12 +379,13 @@ __global__ void SolveManyWeightsKernel(
 						features[1 + 2 * MAX_MACHINES + operation.type] = 1.0f;	 // one hot operation type encoding
 
 						const float SCALE_FACTOR = 100.0f;
+						const float inv_SCALE_FACTOR = 1.0 / SCALE_FACTOR;
 						// normalize nn inputs (it may like it better)
-						features[0] /= SCALE_FACTOR;
+						features[0] *= inv_SCALE_FACTOR;
 						for(int i = 1; i < MAX_MACHINES + 1; ++i) {
-							features[i] /= SCALE_FACTOR;
+							features[i] *= inv_SCALE_FACTOR;
 						}
-						features[1 + machineID] /= SCALE_FACTOR;
+						features[1 + machineID] *= inv_SCALE_FACTOR;
 
 						float score = nn_eval_global_ptr.Evaluate(features, sm_weights, sm_biases);
 						// float score2 = nn_eval_global_ptr.Evaluate(features); // For debug
