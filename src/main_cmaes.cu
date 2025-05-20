@@ -137,7 +137,7 @@ int main(int argc, char *argv[]) {
     }
 
     try {
-        JobShopGPUEvaluator gpu_evaluator(problem_file, topology); // Assuming problem_file path is handled by JobShopGPUEvaluator
+        JobShopGPUEvaluator gpu_evaluator(problem_file, topology, population_size); // Assuming problem_file path is handled by JobShopGPUEvaluator
         g_gpu_evaluator = &gpu_evaluator;
         
         // 2. Generate or load test weights

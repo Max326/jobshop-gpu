@@ -12,7 +12,7 @@
 
 class JobShopGPUEvaluator {
 public:
-    JobShopGPUEvaluator(const std::string& problem_file, const std::vector<int>& nn_topology);
+    JobShopGPUEvaluator(const std::string& problem_file, const std::vector<int>& nn_topology, const int &population_size);
     ~JobShopGPUEvaluator();
 
     // Ustawia batch problemów do ewaluacji (nie kopiuje z pliku, tylko z RAM)
@@ -43,6 +43,12 @@ private:
     int* d_procTimes_ = nullptr;
 
     BatchJobShopGPUData cpu_batch_data_; // aktualny batch
+
+    int nn_candidate_count_ = 0; // number of candidates
+
+    std::vector<NeuralNetwork> neural_networks_; // Store NeuralNetwork objects
+    std::vector<NeuralNetwork::DeviceEvaluator> host_evaluators_; // Evaluators on the host
+    NeuralNetwork::DeviceEvaluator* d_evaluators_ = nullptr; // Evaluators on the device
 };
 
 #endif // JOB_SHOP_GPU_EVALUATOR_CUH
