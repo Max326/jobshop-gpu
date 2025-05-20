@@ -28,10 +28,30 @@ JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const 
     neural_networks_.resize(nn_candidate_count_);
     host_evaluators_.resize(nn_candidate_count_);
 
+    nn_total_weights_per_network_ = 0;
+    nn_total_biases_per_network_ = 0;
+    for (size_t i = 1; i < nn_topology_.size(); ++i) {
+        nn_total_weights_per_network_ += nn_topology_[i - 1] * nn_topology_[i];
+        nn_total_biases_per_network_ += nn_topology_[i];
+    }
+
+    total_weights_size_ = (size_t)nn_candidate_count_ * nn_total_weights_per_network_ * sizeof(float);
+    total_biases_size_ = (size_t)nn_candidate_count_ * nn_total_biases_per_network_ * sizeof(float);
+
+    // Allocate pinned host memory
+    CUDA_CHECK(cudaHostAlloc(&h_pinned_all_weights_, total_weights_size_, cudaHostAllocDefault));
+    CUDA_CHECK(cudaHostAlloc(&h_pinned_all_biases_, total_biases_size_, cudaHostAllocDefault));
+
+    // Allocate GPU memory
+    CUDA_CHECK(cudaMalloc(&d_all_candidate_weights_, total_weights_size_));
+    CUDA_CHECK(cudaMalloc(&d_all_candidate_biases_, total_biases_size_));
+
     for (int r = 0; r < nn_candidate_count_; ++r) {
         neural_networks_[r] = NeuralNetwork(nn_topology_); // Create a NeuralNetwork
+        neural_networks_[r].cudaData->d_weights = d_all_candidate_weights_ + r * nn_total_weights_per_network_;
+        neural_networks_[r].cudaData->d_biases = d_all_candidate_biases_ + r * nn_total_biases_per_network_;
         host_evaluators_[r] = neural_networks_[r].GetDeviceEvaluator(); // Get its DeviceEvaluator
-    }
+    }    
 
     // Allocate and copy DeviceEvaluators to GPU
     cudaMalloc(&d_evaluators_, sizeof(NeuralNetwork::DeviceEvaluator) * nn_candidate_count_);
@@ -41,6 +61,10 @@ JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const 
 JobShopGPUEvaluator::~JobShopGPUEvaluator() {
     FreeProblemDataGPU();
     cudaFree(d_evaluators_);
+    cudaFree(d_all_candidate_weights_);
+    cudaFree(d_all_candidate_biases_);
+    cudaFreeHost(h_pinned_all_weights_);  // Use cudaFreeHost for pinned memory
+    cudaFreeHost(h_pinned_all_biases_);  // Use cudaFreeHost for pinned memory
 }
 
 void JobShopGPUEvaluator::FreeProblemDataGPU() {
@@ -84,6 +108,7 @@ bool JobShopGPUEvaluator::SetCurrentBatch(int batch_start, int batch_size) {
     return true;
 }
 
+
 Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& candidates) {
     auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -91,56 +116,58 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
     if (candidates.rows() != nn_total_params_)
         throw std::runtime_error("Mismatch in number of weights per NN candidate.");
 
-    // Update weights in existing NeuralNetwork objects
+    // --------------------------------------------------------------------
+    // Consolidated Weight/Bias Update and Asynchronous Transfer
+    // --------------------------------------------------------------------
+
     auto t1 = std::chrono::high_resolution_clock::now();
+
+    // 1. Populate Pinned Host Memory: Directly copy from Eigen matrix to the pinned host buffers
     for (int r = 0; r < nn_candidate_count; ++r) {
         int paramIdx = 0;
-        std::vector<std::vector<float>> weights_for_net; // Renamed to avoid conflict
-        std::vector<std::vector<float>> biases_for_net; // Renamed to avoid conflict
+        size_t weight_offset = (size_t)r * nn_total_weights_per_network_;
+        size_t bias_offset = (size_t)r * nn_total_biases_per_network_;
 
         for (size_t i = 1; i < nn_topology_.size(); ++i) {
             int prevLayerSize = nn_topology_[i - 1];
             int currLayerSize = nn_topology_[i];
 
-            std::vector<float> layerWeights(prevLayerSize * currLayerSize);
-            std::vector<float> layerBiases(currLayerSize);
+            // Weights
+            for (int w = 0; w < prevLayerSize * currLayerSize; ++w) {
+                h_pinned_all_weights_[weight_offset++] = static_cast<float>(candidates(paramIdx++, r));
+            }
 
-            for (int w = 0; w < prevLayerSize * currLayerSize; ++w)
-                layerWeights[w] = static_cast<float>(candidates(paramIdx++, r));
-            weights_for_net.push_back(layerWeights);
-
-            for (int b = 0; b < currLayerSize; ++b)
-                layerBiases[b] = static_cast<float>(candidates(paramIdx++, r));
-            biases_for_net.push_back(layerBiases);
-        }
-      
-        // set the new weights to the pre-existing neural network, be careful that the new sizes are correct
-        neural_networks_[r].weights = weights_for_net;
-        neural_networks_[r].biases = biases_for_net;
-        neural_networks_[r].FlattenParams();
-
-        // copy weights and biases to GPU
-        size_t weight_offset = 0;
-        size_t bias_offset = 0;
-        for (size_t i = 0; i < weights_for_net.size(); ++i) {
-          cudaMemcpy(neural_networks_[r].cudaData->d_weights + weight_offset,
-                     weights_for_net[i].data(),
-                     weights_for_net[i].size() * sizeof(float),
-                     cudaMemcpyHostToDevice);
-          cudaMemcpy(neural_networks_[r].cudaData->d_biases + bias_offset,
-                     biases_for_net[i].data(),
-                     biases_for_net[i].size() * sizeof(float),
-                     cudaMemcpyHostToDevice);
-          weight_offset += weights_for_net[i].size();
-          bias_offset += biases_for_net[i].size();
+            // Biases
+            for (int b = 0; b < currLayerSize; ++b) {
+                h_pinned_all_biases_[bias_offset++] = static_cast<float>(candidates(paramIdx++, r));
+            }
         }
     }
+
     auto t2 = std::chrono::high_resolution_clock::now();
 
-    // DeviceEvaluator H2D: Use the pre-allocated d_evaluators_
+    // 2. Asynchronous Memory Transfer: Copy all weights and biases in single calls
+    cudaStream_t stream; // Get the stream (assuming this is a member variable now)
+    cudaStreamCreate(&stream);
+    CUDA_CHECK(cudaMemcpyAsync(d_all_candidate_weights_, h_pinned_all_weights_, total_weights_size_, cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaMemcpyAsync(d_all_candidate_biases_, h_pinned_all_biases_, total_biases_size_, cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+
+    // Update DeviceEvaluators on the host with the new weight/bias pointers
+    for (int r = 0; r < nn_candidate_count; ++r) {
+        neural_networks_[r].cudaData->d_weights = d_all_candidate_weights_ + r * nn_total_weights_per_network_;
+        neural_networks_[r].cudaData->d_biases = d_all_candidate_biases_ + r * nn_total_biases_per_network_;
+        host_evaluators_[r] = neural_networks_[r].GetDeviceEvaluator(); // Get its DeviceEvaluator
+    }
+    // Copy the updated DeviceEvaluators to the GPU
+    CUDA_CHECK(cudaMemcpyAsync(d_evaluators_, host_evaluators_.data(), sizeof(NeuralNetwork::DeviceEvaluator) * nn_candidate_count, cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+    // --------------------------------------------------------------------
+    // Rest of EvaluateCandidates (Kernel Launch, Result Collection)
+    // --------------------------------------------------------------------
+
     auto t3 = std::chrono::high_resolution_clock::now();
 
-    // Rest of your code remains mostly the same, using d_evaluators_
     std::vector<GPUOperation> ops_working(nn_candidate_count * num_problems_to_evaluate_ * max_ops_per_problem_);
     for (int w = 0; w < nn_candidate_count; ++w) {
         for (int p = 0; p < num_problems_to_evaluate_; ++p) {
@@ -154,27 +181,25 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
     auto t4 = std::chrono::high_resolution_clock::now();
 
     GPUOperation* d_ops_working = nullptr;
-    cudaMalloc(&d_ops_working, ops_working.size() * sizeof(GPUOperation));
-    cudaMemcpy(d_ops_working, ops_working.data(), ops_working.size() * sizeof(GPUOperation), cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaMalloc(&d_ops_working, ops_working.size() * sizeof(GPUOperation)));
+    CUDA_CHECK(cudaMemcpy(d_ops_working, ops_working.data(), ops_working.size() * sizeof(GPUOperation), cudaMemcpyHostToDevice));
 
     float* d_results = nullptr;
-    cudaMalloc(&d_results, sizeof(float) * nn_candidate_count);
+    CUDA_CHECK(cudaMalloc(&d_results, sizeof(float) * nn_candidate_count));
 
     // Kernel
     auto t5 = std::chrono::high_resolution_clock::now();
-    cudaStream_t stream; // I don't know if this helps
-    cudaStreamCreate(&stream);
-    
+
     JobShopHeuristic::SolveBatchNew(
         d_problems_, d_evaluators_, d_ops_working, d_results,
         num_problems_to_evaluate_, // This is numProblems_per_block for the kernel
         nn_candidate_count_,       // This is numWeights_total_blocks for the kernel
         max_ops_per_problem_,
-        stream,
+        stream,                    // Pass the stream
         nn_total_params_           // <<< Pass the total parameters for one NN here
     );
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 
-    cudaStreamSynchronize(stream);
     cudaError_t kernelErr = cudaGetLastError();
     if (kernelErr != cudaSuccess) {
         std::cerr << "Kernel error during CMA-ES evaluation: " << cudaGetErrorString(kernelErr) << std::endl;
@@ -188,7 +213,7 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
     auto t6 = std::chrono::high_resolution_clock::now();
 
     std::vector<float> host_results(nn_candidate_count);
-    cudaMemcpy(host_results.data(), d_results, sizeof(float) * nn_candidate_count, cudaMemcpyDeviceToHost);
+    CUDA_CHECK(cudaMemcpy(host_results.data(), d_results, sizeof(float) * nn_candidate_count, cudaMemcpyDeviceToHost));
 
     auto t7 = std::chrono::high_resolution_clock::now();
 
@@ -220,3 +245,5 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
 
     return fvalues;
 }
+
+

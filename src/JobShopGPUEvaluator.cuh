@@ -49,6 +49,15 @@ private:
     std::vector<NeuralNetwork> neural_networks_; // Store NeuralNetwork objects
     std::vector<NeuralNetwork::DeviceEvaluator> host_evaluators_; // Evaluators on the host
     NeuralNetwork::DeviceEvaluator* d_evaluators_ = nullptr; // Evaluators on the device
+
+    float* d_all_candidate_weights_ = nullptr;
+    float* d_all_candidate_biases_ = nullptr;
+    float* h_pinned_all_weights_ = nullptr;
+    float* h_pinned_all_biases_ = nullptr;
+    size_t total_weights_size_ = 0;
+    size_t total_biases_size_ = 0;
+    int nn_total_weights_per_network_ = 0; // Store total weights per network
+    int nn_total_biases_per_network_ = 0; // Store total biases per network
 };
 
 #endif // JOB_SHOP_GPU_EVALUATOR_CUH

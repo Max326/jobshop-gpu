@@ -187,22 +187,22 @@ int main(int argc, char *argv[]) {
                   << candidates.rows() << " parameters each.\n";
 
         // 3. Evaluate single batch (example)
-        for (int i = 0; i < 3; ++i){
-            std::cout << "[INFO] Evaluating batch " << i << "...\n";
-            if (gpu_evaluator.SetCurrentBatch(i * batch_size, batch_size)) {
-                Eigen::VectorXd results = gpu_evaluator.EvaluateCandidates(candidates);
-            } else {
-                std::cerr << "[ERROR] Failed to set evaluation batch\n";
-                return 1;
-            }
-        }
-
-        // if (gpu_evaluator.SetCurrentBatch(0, batch_size)) {
-        //     Eigen::VectorXd results = gpu_evaluator.EvaluateCandidates(candidates);
-        // } else {
-        //     std::cerr << "Failed to set evaluation batch\n";
-        //     return 1;
+        // for (int i = 0; i < 3; ++i){
+        //     std::cout << "[INFO] Evaluating batch " << i << "...\n";
+        //     if (gpu_evaluator.SetCurrentBatch(i * batch_size, batch_size)) {
+        //         Eigen::VectorXd results = gpu_evaluator.EvaluateCandidates(candidates);
+        //     } else {
+        //         std::cerr << "[ERROR] Failed to set evaluation batch\n";
+        //         return 1;
+        //     }
         // }
+
+        if (gpu_evaluator.SetCurrentBatch(0, batch_size)) {
+            Eigen::VectorXd results = gpu_evaluator.EvaluateCandidates(candidates);
+        } else {
+            std::cerr << "Failed to set evaluation batch\n";
+            return 1;
+        }
     
     } catch(const std::exception& e) {
         std::cerr << "An exception occurred: " << e.what() << "\n";
