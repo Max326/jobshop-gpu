@@ -111,23 +111,35 @@ void JobShopHeuristic::SolveBatchNew(
 	const NeuralNetwork::DeviceEvaluator* evaluators,
 	GPUOperation* ops_working,
 	float* results,
-	int numProblems,
-	int numWeights,
+	int numProblems_per_block,	  // Renamed for clarity: num FJSS problems this block will handle
+	int numWeights_total_blocks,  // Renamed for clarity: total NNs, so total blocks
 	int maxOpsPerProblem,
-	cudaStream_t stream = 0) {
-	int threads = 64;
-	int blocks = numWeights;
-	size_t sharedMemSize = threads * sizeof(float);
+	cudaStream_t stream,				 // Removed default stream = 0 as it's passed from evaluator
+	int nn_total_params_for_one_network	 // <<< NEW PARAMETER
+) {
+	int threads_per_block = 64;	 // This is your blockDim.x
+	int total_cuda_blocks = numWeights_total_blocks;
+
+	// Calculate dynamic shared memory size:
+	// (threads_per_block * sizeof(float) for shared_makespans)
+	// + (nn_total_params_for_one_network * sizeof(float) for combined weights & biases of ONE network)
+	size_t dynamic_shared_mem_size = (threads_per_block * sizeof(float)) + (nn_total_params_for_one_network * sizeof(float));
 
 	cudaDeviceSetLimit(cudaLimitStackSize, 4096);
+	// int reset_value = 0; // If gpu_error_flag is used
+	// cudaMemcpyToSymbol(gpu_error_flag, &reset_value, sizeof(int), 0, cudaMemcpyHostToDevice);
 
-	int reset_value = 0;
-	cudaMemcpyToSymbol(gpu_error_flag, &reset_value, sizeof(int), 0, cudaMemcpyHostToDevice);
+	SolveManyWeightsKernel<<<total_cuda_blocks, threads_per_block, dynamic_shared_mem_size, stream>>>(
+		problems,
+		evaluators,
+		ops_working,
+		results,
+		numProblems_per_block,	// This is how many problems each block should iterate up to.
+		maxOpsPerProblem);
 
-	SolveManyWeightsKernel<<<blocks, threads, sharedMemSize, stream>>>(
-		problems, evaluators, ops_working, results, numProblems, maxOpsPerProblem);
 	cudaDeviceSynchronize();
 }
+
 // Allocate GPU memory for solutions
 SolutionManager::GPUSolutions SolutionManager::CreateGPUSolutions(int numProblems, int numMachines, int maxOps) {
 	GPUSolutions solutions;
@@ -230,44 +242,66 @@ void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operatio
 
 __global__ void SolveManyWeightsKernel(
 	const GPUProblem* problems,
-	const NeuralNetwork::DeviceEvaluator* evaluators,
+	const NeuralNetwork::DeviceEvaluator* evaluators,  // This points to DeviceEvaluators in global memory
 	GPUOperation* ops_working,
 	float* results,
-	int numProblems,
+	int numProblemsToSolvePerBlock,	 // Renamed for clarity (was numProblems)
 	int maxOpsPerProblem) {
-	if(gpu_error_flag) {  // Check at the very beginning
-		return;
+	// if(gpu_error_flag) { return; } // Re-enable if needed, but you said removing checks helped
+
+	// Combined dynamic shared memory
+	extern __shared__ float shared_block_data[];
+
+	// Partition 1: Makespans for each problem solved by threads in this block
+	// blockDim.x is the number of threads in this block (e.g., 64)
+	float* shared_makespans = shared_block_data;
+
+	// --- Identify current weight set and problem for this thread ---
+	int weightSet = blockIdx.x;			  // Each block handles one weightSet
+	int problemIdxInBlock = threadIdx.x;  // Each thread in block handles one FJSS problem for this weightSet
+
+	// --- Load NN Parameters into Shared Memory ---
+	const NeuralNetwork::DeviceEvaluator& nn_eval_global_ptr = evaluators[weightSet];  // Get the evaluator for this block
+
+	// Calculate total weights and biases for this NN
+	// This must be done by all threads or broadcast, as it's needed for shared mem partitioning
+	int nn_total_weights = 0;
+	int nn_total_biases = 0;
+	if(nn_eval_global_ptr.num_layers > 0) {
+		for(int i = 1; i < nn_eval_global_ptr.num_layers; ++i) {
+			nn_total_weights += nn_eval_global_ptr.d_topology[i - 1] * nn_eval_global_ptr.d_topology[i];
+			nn_total_biases += nn_eval_global_ptr.d_topology[i];
+		}
 	}
+	// else: handle error or assume valid if pre-checked
 
-	extern __shared__ float shared_makespans[];
+	// Partition 2: Storage for NN weights for this block (starts after shared_makespans)
+	float* sm_weights = shared_block_data + blockDim.x;
 
-	int weightSet = blockIdx.x;
-	int problemIdx = threadIdx.x;
+	// Partition 3: Storage for NN biases for this block (starts after sm_weights)
+	float* sm_biases = shared_block_data + blockDim.x + nn_total_weights;
 
-	// Debug: Start kernela
-	if(weightSet == 0 && problemIdx == 0) {
-		printf("[KERNEL] SolveManyWeightsKernel start: numProblems=%d, maxOpsPerProblem=%d\n", numProblems, maxOpsPerProblem);
+	// Cooperatively load NN parameters from global to shared memory
+	// nn_eval_global_ptr.weights and nn_eval_global_ptr.biases point to global device memory
+	for(int i = threadIdx.x; i < nn_total_weights; i += blockDim.x) {
+		sm_weights[i] = nn_eval_global_ptr.weights[i];
 	}
+	for(int i = threadIdx.x; i < nn_total_biases; i += blockDim.x) {
+		sm_biases[i] = nn_eval_global_ptr.biases[i];
+	}
+	__syncthreads();  // IMPORTANT: Ensure all threads finish loading before any thread proceeds
 
-	float makespan = 0.0f;
+	// --- Main problem-solving logic ---
+	float makespan_val = 0.0f;	// Changed variable name to avoid conflict
+	// numProblemsToSolvePerBlock is the number of FJSS problems this block is responsible for
+	if(problemIdxInBlock < numProblemsToSolvePerBlock) {
+		const GPUProblem problem = problems[problemIdxInBlock];	 // Assuming 'problems' array is correctly indexed for the batch
 
-    if(problemIdx >= numProblems) return;
+		// local_ops indexing seems correct from your previous structure
+		int base_op_idx = (weightSet * numProblemsToSolvePerBlock + problemIdxInBlock) * maxOpsPerProblem;
+		GPUOperation* local_ops = &ops_working[base_op_idx];
 
-	if(problemIdx < numProblems) {
-		const GPUProblem problem = problems[problemIdx];
-		const NeuralNetwork::DeviceEvaluator& nn_eval = evaluators[weightSet];
-
-		const int numJobs = problem.numJobs;
-		const int numMachines = problem.numMachines;
-
-		// Debug: problem details print
-		/*         if (weightSet == 0 && problemIdx == 0) {
-					PrintProblemDetails(problem);
-				} */
-
-		int base = (weightSet * numProblems + problemIdx) * maxOpsPerProblem;
-		GPUOperation* local_ops = &ops_working[base];
-
+		// ... (rest of your existing problem setup: jobScheduledOps, machine_times, etc. from JobShopHeuristic.cu[6]) ...
 		int jobScheduledOps[MAX_JOBS] = {0};
 		int machine_times[MAX_MACHINES] = {0};
 
@@ -275,10 +309,8 @@ __global__ void SolveManyWeightsKernel(
 		int opTypeCount[MAX_OP_TYPES] = {0};
 		int opTypePerJobCount[MAX_JOBS][MAX_OP_TYPES] = {0};
 
-		// Debug: data init
-		/*         if (weightSet == 0 && problemIdx == 0) {
-					printf("[KERNEL] Inicjalizacja danych dla problemIdx=%d\n", problemIdx);
-				} */
+		const int numJobs = problem.numJobs;
+		const int numMachines = problem.numMachines;
 
 		for(int jobID = 0; jobID < numJobs; ++jobID) {
 			const GPUJob& job = problem.jobs[jobID];
@@ -290,8 +322,8 @@ __global__ void SolveManyWeightsKernel(
 			}
 		}
 
-		int local_makespan = 0;
-
+		
+		int current_local_makespan = 0;	 // Renamed to avoid conflict
 		bool scheduled_any;
 		do {
 			scheduled_any = false;
@@ -326,9 +358,9 @@ __global__ void SolveManyWeightsKernel(
 						features[0] = static_cast<float>(start_time) - machine_times[machineID];  // wasted time
 
 						for(int i = 1; i < MAX_MACHINES + 1; ++i) {
-							features[i] = static_cast<float>(local_makespan - machine_times[i - 1]);  // envelope
+							features[i] = static_cast<float>(current_local_makespan - machine_times[i - 1]);  // envelope
 						}
-						features[1 + machineID] = static_cast<float>(local_makespan - (start_time + pTime));  // envelope for current machine
+						features[1 + machineID] = static_cast<float>(current_local_makespan - (start_time + pTime));  // envelope for current machine
 
 						features[1 + MAX_MACHINES + machineID] = 1.0f;			 // one hot machine encoding
 						features[1 + 2 * MAX_MACHINES + operation.type] = 1.0f;	 // one hot operation type encoding
@@ -341,9 +373,14 @@ __global__ void SolveManyWeightsKernel(
 						}
 						features[1 + machineID] /= SCALE_FACTOR;
 
-						float score = nn_eval.Evaluate(features);  //! Error: evaluate returns 0 or nans
+						float score = nn_eval_global_ptr.Evaluate(features, sm_weights, sm_biases);
+						// float score2 = nn_eval_global_ptr.Evaluate(features); // For debug
 
-						
+						// if (score != score2) {
+						// 	printf("[KERNEL] Score mismatch: %f vs %f\n", score, score2);
+						// 	return;
+						// }
+
 						if(score > bestScoreValue) {
 							bestScoreValue = score;
 							bestJobID = jobID;
@@ -357,16 +394,15 @@ __global__ void SolveManyWeightsKernel(
 
 			if(bestJobID == -1) break;
 
-            // Debug: Score print
-            if (weightSet == 0 && problemIdx == 0 && threadIdx.x == 0 && bestJobID == 0 && bestOpID == 0) {
-                printf("[DEBUG] Initial Score=%.2f\n", bestScoreValue);
-            }
+			// Debug: Score print
+			if(weightSet == 0 && problemIdxInBlock == 0 && threadIdx.x == 0 && bestJobID == 0 && bestOpID == 0) {
+				printf("[DEBUG] Initial Score=%.2f\n", bestScoreValue);
+			}
 
-			GPUJob& bestJob = problem.jobs[bestJobID];
+			GPUJob& bestJob = problem.jobs[bestJobID];	// problem is const, so bestJob needs to be const if problem.jobs not modifiable
 			GPUOperation& bestOperation = local_ops[bestJob.operationsOffset + bestOpID];
-			int opMach_idx = bestOperation.type * numMachines + bestMachineID;
+			int opMach_idx = bestOperation.type * problem.numMachines + bestMachineID;	// Use problem.numMachines
 			int pTime = problem.processingTimes[opMach_idx];
-
 			int endTime = bestStartTime + pTime;
 
 			jobScheduledOps[bestJobID]++;
@@ -378,41 +414,41 @@ __global__ void SolveManyWeightsKernel(
 			}
 
 			bestOperation.predecessorCount = -1;
-
 			for(int s = 0; s < bestOperation.successorCount; ++s) {
-				int successorID = problem.successorsIDs[bestOperation.successorsOffset + s];
-				GPUOperation& successorOperation = local_ops[bestJob.operationsOffset + successorID];
+				int successor_op_array_idx = problem.successorsIDs[bestOperation.successorsOffset + s];
+				// The successorID is an index relative to the start of the current job's operations.
+				GPUOperation& successorOperation = local_ops[bestJob.operationsOffset + successor_op_array_idx];
 				successorOperation.predecessorCount -= 1;
-				successorOperation.lastPredecessorEndTime =
-					max(successorOperation.lastPredecessorEndTime, endTime);
+				successorOperation.lastPredecessorEndTime = max(successorOperation.lastPredecessorEndTime, endTime);
 			}
-
 			machine_times[bestMachineID] = endTime;
-			if(endTime > local_makespan) local_makespan = endTime;
-
+			if(endTime > current_local_makespan) current_local_makespan = endTime;
 			scheduled_any = true;
 		} while(scheduled_any);
-
-		makespan = static_cast<float>(local_makespan);
-		shared_makespans[problemIdx] = makespan;
-
+		makespan_val = static_cast<float>(current_local_makespan);
+		shared_makespans[problemIdxInBlock] = makespan_val;
 	} else {
-		shared_makespans[problemIdx] = 0.0f;
+		// Threads outside the numProblemsToSolvePerBlock range (e.g. if blockDim.x > numProblemsToSolvePerBlock)
+		shared_makespans[problemIdxInBlock] = 0.0f;
 	}
+
 	__syncthreads();
 
+	// Reduction to calculate average makespan for this weightSet (block)
 	if(threadIdx.x == 0) {
 		float sum = 0.0f;
-		for(int i = 0; i < numProblems; ++i)
+		for(int i = 0; i < numProblemsToSolvePerBlock; ++i) {  // Iterate up to actual problems solved
 			sum += shared_makespans[i];
-		results[weightSet] = sum / numProblems;
-		printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);
-	}
-
-	if(weightSet == 0 && problemIdx == 0) {
-		printf("[KERNEL] SolveManyWeightsKernel end\n");
+		}
+		if(numProblemsToSolvePerBlock > 0) {
+			results[weightSet] = sum / numProblemsToSolvePerBlock;
+		} else {
+			results[weightSet] = 0.0f;
+		}
+		printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);  // Keep for debug if needed
 	}
 }
+
 // Print problem details from device (for debugging)
 __device__ void PrintProblemDetails(const GPUProblem& problem) {
 	printf("\n=== Problem %d Details ===\n", blockIdx.x * blockDim.x + threadIdx.x);

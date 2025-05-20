@@ -164,11 +164,16 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
     auto t5 = std::chrono::high_resolution_clock::now();
     cudaStream_t stream; // I don't know if this helps
     cudaStreamCreate(&stream);
+    
     JobShopHeuristic::SolveBatchNew(
         d_problems_, d_evaluators_, d_ops_working, d_results,
-        num_problems_to_evaluate_, nn_candidate_count, max_ops_per_problem_,
-        stream
+        num_problems_to_evaluate_, // This is numProblems_per_block for the kernel
+        nn_candidate_count_,       // This is numWeights_total_blocks for the kernel
+        max_ops_per_problem_,
+        stream,
+        nn_total_params_           // <<< Pass the total parameters for one NN here
     );
+
     cudaStreamSynchronize(stream);
     cudaError_t kernelErr = cudaGetLastError();
     if (kernelErr != cudaSuccess) {

@@ -74,14 +74,15 @@ public:
     };
 
 	static void SolveBatchNew(
-		const GPUProblem* problems,
-		const NeuralNetwork::DeviceEvaluator* evaluators,
+        const GPUProblem* problems,
+        const NeuralNetwork::DeviceEvaluator* evaluators,
         GPUOperation* ops_working,
-		float* results,
-		int numProblems,
-		int numWeights,
+        float* results,
+        int numProblems,
+        int numWeights,
         int maxOpsPerProblem,
-        cudaStream_t stream
+        cudaStream_t stream,
+        int nn_total_params_for_one_network
     );
 
     void PrintSchedule(const CPUSolution& solution, JobShopData data);
@@ -106,7 +107,7 @@ __global__ void SolveManyWeightsKernel(
     const NeuralNetwork::DeviceEvaluator* evaluators,
     GPUOperation* ops_working,
     float* results,
-    int numProblems,
+    int numProblemsToSolvePerBlock,
     int maxOpsPerProblem
 );
 

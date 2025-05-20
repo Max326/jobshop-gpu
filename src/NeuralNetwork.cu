@@ -168,7 +168,9 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
 	const int MAX_LAYER_SIZE = maxLayerSize;
 	float activations[MAX_LAYER_SIZE];
 
-	// Sprawdź poprawność cechy wejściowe
+	// if (this->max_layer_size <= 0 || this->max_layer_size > 101 /*Match static const*/) { // Basic sanity check
+    //     return 0.0f; // Or handle error differently if critical path allows
+    // }
 	if(threadIdx.x == 0 && blockIdx.x == 0) {
 		for(int i = 0; i < this->d_topology[0]; i++) {
 			if(isnan(features[i]) || isinf(features[i])) {
@@ -178,7 +180,7 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
 			}
 		}
 	}
-
+	
 	// 2. Copy input (without printing)
 	for(int i = 0; i < this->d_topology[0]; i++) {
 		activations[i] = features[i];
@@ -220,6 +222,68 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
 
 	return final_output;
 }
+
+// New Evaluate function using shared memory pointers
+__device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float* features, const float* p_shared_weights, const float* p_shared_biases) const {
+    // Use this->max_layer_size which is now set correctly
+
+    if (this->max_layer_size <= 0 || this->max_layer_size > 101 /*Match static const*/) { // Basic sanity check
+        return 0.0f; // Or handle error differently if critical path allows
+    }
+    // Using 101 directly as per existing code's use of NeuralNetwork::maxLayerSize
+    float activations[maxLayerSize]; // Max size for activations array on stack
+
+	if(threadIdx.x == 0 && blockIdx.x == 0) {
+		for(int i = 0; i < this->d_topology[0]; i++) {
+			if(isnan(features[i]) || isinf(features[i])) {
+				printf("[ERROR] Invalid input feature at index %d: %f\n", i, features[i]);
+				NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid input feature");
+				return 0.0f;
+			}
+		}
+	}
+
+    // Input features copy (checks removed for performance as per your successful test)
+    for(int i = 0; i < this->d_topology[0]; i++) {
+        activations[i] = features[i];
+    }
+
+    int weight_idx_offset = 0; // Offset for reading from p_shared_weights
+    int bias_idx_offset = 0;   // Offset for reading from p_shared_biases
+
+    for(int layer = 1; layer < this->num_layers; layer++) {
+        int in_size = this->d_topology[layer - 1];
+        int out_size = this->d_topology[layer];
+        
+        float next_activations[101]; // Temporary buffer for next layer's activations
+
+        for(int neuron = 0; neuron < out_size; neuron++) {
+            float sum = p_shared_biases[bias_idx_offset + neuron]; // Read from shared biases
+
+            for(int i = 0; i < in_size; i++) {
+                // Read from shared weights
+                float weight_val = p_shared_weights[weight_idx_offset + neuron * in_size + i];
+                sum += activations[i] * weight_val;
+            }
+            next_activations[neuron] = ScaleTanh2(sum); 
+        }
+        
+
+        // for(int i=0; i < out_size; ++i) { // Copy to activations for next layer
+        //     activations[i] = next_activations[i];
+        // }
+
+		memcpy(activations, next_activations, out_size * sizeof(float));
+
+        weight_idx_offset += in_size * out_size;
+        bias_idx_offset += out_size;
+    }
+
+    // Assuming output layer has 1 neuron for FJSS evaluation score
+    float final_output = (this->d_topology[this->num_layers - 1] == 1) ? activations[0] : 0.0f;
+    return final_output;
+}
+
 
 void NeuralNetwork::GenerateWeights() {
 	weights.clear();

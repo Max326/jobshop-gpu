@@ -113,6 +113,8 @@ public:
 		}
 
 		__device__ float Evaluate(const float* features) const;
+
+		__device__ float Evaluate(const float* features, const float* p_shared_weights, const float* p_shared_biases) const;
 	};
 
 	__host__ DeviceEvaluator GetDeviceEvaluator() const {
@@ -135,6 +137,8 @@ public:
 			eval.d_topology[i] = 0;
 		}
 		eval.num_layers = static_cast<int>(topology.size());
+		eval.max_layer_size = NeuralNetwork::maxLayerSize;
+
 		return eval;
 	}
 #define CUDA_CHECK(call)                                                                                \
