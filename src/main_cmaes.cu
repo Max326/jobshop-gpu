@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
         
     } */
     
-    double sigma = 0.1;//:0
+    double sigma = 0.4;//:0
     CMAParameters<> cmaparams(x0, sigma, population_size);//:0  
     cmaparams.set_algo(sepaCMAES);
     

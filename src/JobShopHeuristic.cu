@@ -249,11 +249,6 @@ __global__ void SolveManyWeightsKernel(
     int weightSet = blockIdx.x;
     int problemIdx = threadIdx.x;
 
-    // Debug: Start kernela
-    if (weightSet == 0 && problemIdx == 0) {
-        printf("[KERNEL] SolveManyWeightsKernel start: numProblems=%d, maxOpsPerProblem=%d\n", numProblems, maxOpsPerProblem);
-    }
-
     float makespan = 0.0f;
 
     if (problemIdx < numProblems) {
@@ -391,9 +386,9 @@ __global__ void SolveManyWeightsKernel(
                         float score = nn_eval.Evaluate(features);//! Error: evaluate returns 0 or nans
 
                         // Debug: Score print 
-                        if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
+/*                         if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
                             printf("[KERNEL] Score=%.2f\n", score);
-                        }
+                        } */
 
                         if (score > bestScoreValue) {
                             bestScoreValue = score;
@@ -452,12 +447,12 @@ __global__ void SolveManyWeightsKernel(
         for (int i = 0; i < numProblems; ++i)
             sum += shared_makespans[i];
         results[weightSet] = sum / numProblems;
-        printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);
+       // printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);
     }
 
-    if (weightSet == 0 && problemIdx == 0) {
+/*     if (weightSet == 0 && problemIdx == 0) {
         printf("[KERNEL] SolveManyWeightsKernel end\n");
-    }
+    } */
 }
 // Print problem details from device (for debugging)
 __device__ void PrintProblemDetails(const GPUProblem& problem) {

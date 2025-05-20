@@ -101,8 +101,8 @@ public:
 
 	
 	struct DeviceEvaluator {
-		const float* weights;			// Flattened weights on device
-		const float* biases;			// Flattened biases on device
+		const float* d_weights;			// Flattened weights on device
+		const float* d_biases;			// Flattened biases on device
 		int d_topology[MAX_NN_LAYERS];	// Embedded topology array
 		int num_layers;
 
@@ -123,11 +123,11 @@ public:
 		if(topology.size() > MAX_NN_LAYERS) {
 			throw std::runtime_error("Network topology exceeds MAX_NN_LAYERS defined in DeviceEvaluator.");
 		}
-
+	
 		DeviceEvaluator eval;
-		eval.weights = cudaData->d_weights;
-		eval.biases = cudaData->d_biases;
-
+		eval.d_weights = cudaData->d_weights;
+		eval.d_biases = cudaData->d_biases;
+	
 		for(size_t i = 0; i < topology.size(); ++i) {
 			eval.d_topology[i] = topology[i];
 		}

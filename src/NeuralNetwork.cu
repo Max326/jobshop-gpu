@@ -229,7 +229,7 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
                 }
                 return 0.0f;
             }
-            float sum = this->biases[bias_offset + neuron];
+            float sum = this->d_biases[bias_offset + neuron];
 
             // Sprawdzamy bias
             if(isnan(sum) || isinf(sum)) {
@@ -255,10 +255,10 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
                 }
                 
                 // Sprawdzamy wagę i aktywację
-                if(isnan(this->weights[weight_idx]) || isinf(this->weights[weight_idx])) {
+                if(isnan(this->d_weights[weight_idx]) || isinf(this->d_weights[weight_idx])) {
                     if (threadIdx.x == 0 && blockIdx.x == 0) {
                         printf("[ERROR] Invalid weight at layer %d, neuron %d, input %d: %f\n", 
-                               layer, neuron, i, this->weights[weight_idx]);
+                               layer, neuron, i, this->d_weights[weight_idx]);
                         NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid weight");
 
                     }
@@ -275,7 +275,7 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
                     return 0.0f;
                 }
                 
-                sum += activations[i] * this->weights[weight_idx];
+                sum += activations[i] * this->d_weights[weight_idx];
             }
             
             // Sprawdzamy sumę przed aktywacją
