@@ -228,6 +228,7 @@ struct GPUProblem {
     int numMachines;
     int numJobs;
     int numOpTypes;
+    int totalOpsCount; //aaa
     GPUJob* jobs;                // Device pointer
     GPUOperation* operations;    // Device pointer
     int* eligibleMachines;       // Device pointer

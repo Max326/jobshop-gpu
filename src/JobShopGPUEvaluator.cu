@@ -8,7 +8,7 @@ JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const 
     : nn_topology_(nn_topology)
 {
     // all problems at once 
-    cpu_problems_ = JobShopData::LoadFromParallelJson(problem_file, 100);//TODO fix nummber of problem assignment 
+    cpu_problems_ = JobShopData::LoadFromParallelJson(problem_file, 500);//TODO fix nummber of problem assignment 
     if (cpu_problems_.empty())
         throw std::runtime_error("No problems loaded!");
 
@@ -92,10 +92,6 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
     cudaMalloc(&d_all_candidate_weights_mega_buffer, total_weights_all_candidates_size * sizeof(float));
     cudaMalloc(&d_all_candidate_biases_mega_buffer, total_biases_all_candidates_size * sizeof(float));
 
-    // int* d_topology_gpu = nullptr; // Remove this - d_topology is embedded in DeviceEvaluator
-    // cudaMalloc(&d_topology_gpu, nn_topology_.size() * sizeof(int)); // Remove this
-    // cudaMemcpy(d_topology_gpu, nn_topology_.data(), nn_topology_.size() * sizeof(int), cudaMemcpyHostToDevice); // Remove this
-
     std::vector<NeuralNetwork::DeviceEvaluator> host_evaluators(nn_candidate_count);
     
     std::vector<float> temp_host_weights_buffer(single_nn_weights_count);
@@ -154,28 +150,26 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
     cudaMemcpy(d_evaluators, host_evaluators.data(), sizeof(NeuralNetwork::DeviceEvaluator) * nn_candidate_count, cudaMemcpyHostToDevice);
     auto t3_eval_h2d = std::chrono::high_resolution_clock::now();
 
-    // Prepare ops working - This will be changed in Krok 3
-    // For now, keep existing logic for ops_working, then replace
-    std::vector<GPUOperation> ops_working(nn_candidate_count * num_problems_to_evaluate_ * max_ops_per_problem_);
-    for (int w = 0; w < nn_candidate_count; ++w) {
-      for (int p = 0; p < num_problems_to_evaluate_; ++p) {
-        int base_idx = (w * num_problems_to_evaluate_ + p) * max_ops_per_problem_;
-        int opsOffset = cpu_batch_data_.operationsOffsets[p]; 
-        int opsCount = cpu_batch_data_.operationsOffsets[p+1] - cpu_batch_data_.operationsOffsets[p];
-        
-        if (opsCount > max_ops_per_problem_) {
-            opsCount = max_ops_per_problem_; 
-        }
-        memcpy(&ops_working[base_idx], &cpu_batch_data_.operations[opsOffset], opsCount * sizeof(GPUOperation));
-      }
-    }
-    auto t4_ops_memcpy_cpu = std::chrono::high_resolution_clock::now();
+    // GPUOperation* d_ops_working = nullptr; // Deklaracja już istnieje jako pole klasy, ale tu chodzi o lokalną zmienną w funkcji
+                                          // Jednakże, d_ops_working w tym kontekście jest buforem roboczym dla kernela.
+                                          // d_ops_ (pole klasy) to szablon danych problemu.
 
-    GPUOperation* d_ops_working = nullptr;
-    cudaMalloc(&d_ops_working, ops_working.size() * sizeof(GPUOperation)); 
-    cudaMemcpy(d_ops_working, ops_working.data(), ops_working.size() * sizeof(GPUOperation), cudaMemcpyHostToDevice);
-    auto t5_ops_h2d = std::chrono::high_resolution_clock::now();
+    // Alokuj pamięć dla d_ops_working, ale nie kopiuj z hosta
+    // Ten bufor będzie używany przez kernel jako pamięć robocza
+    GPUOperation* d_kernel_ops_working_buffer = nullptr; // Użyj innej nazwy, aby uniknąć konfliktu z polem klasy d_ops_
+    size_t d_kernel_ops_working_size_bytes = (size_t)nn_candidate_count * num_problems_to_evaluate_ * max_ops_per_problem_ * sizeof(GPUOperation);
+    if (d_kernel_ops_working_size_bytes == 0) {
+        throw std::runtime_error("Calculated size for d_kernel_ops_working_buffer is zero.");
+    }
+    cudaError_t err_alloc_ops_working = cudaMalloc(&d_kernel_ops_working_buffer, d_kernel_ops_working_size_bytes);
+    if (err_alloc_ops_working != cudaSuccess) {
+        throw std::runtime_error("Failed to allocate d_kernel_ops_working_buffer: " + std::string(cudaGetErrorString(err_alloc_ops_working)));
+    }
     
+    // Usuwamy tworzenie std::vector<GPUOperation> ops_working na CPU i jego kopiowanie
+    // auto t4_ops_memcpy_cpu = std::chrono::high_resolution_clock::now(); // Timer niepotrzebny
+    // auto t5_ops_h2d = std::chrono::high_resolution_clock::now(); // Timer niepotrzebny
+
     float* d_results = nullptr;
     cudaMalloc(&d_results, sizeof(float) * nn_candidate_count);
 
@@ -184,15 +178,13 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
     cudaStreamCreate(&stream);
 
      JobShopHeuristic::SolveBatchNew(
-        d_problems_, 
-        d_evaluators, 
-        // d_ops_, // This was the template, kernel accesses it via d_problems_
-        d_ops_working, // Pass the allocated working memory for the kernel to use
-        d_results, 
+        d_problems_,          // Wskaźnik do struktur GPUProblem (zawierają wskaźniki do szablonów danych)
+        d_evaluators,         // Wskaźnik do ewaluatorów sieci neuronowych
+        d_kernel_ops_working_buffer, // Pamięć robocza dla kernela do wypełnienia i modyfikacji
+        d_results,            // Bufor na wyniki
         num_problems_to_evaluate_, 
         nn_candidate_count, 
         max_ops_per_problem_, 
-        // cpu_batch_data_.operationsOffsets.data(), // Not needed by this version of SolveBatchNew
         stream
     );
 
@@ -214,9 +206,8 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
 
     cudaFree(d_all_candidate_weights_mega_buffer);
     cudaFree(d_all_candidate_biases_mega_buffer);
-    // cudaFree(d_topology_gpu); // Removed as d_topology is embedded
     cudaFree(d_evaluators);
-    cudaFree(d_ops_working); 
+    cudaFree(d_kernel_ops_working_buffer); // Zwolnij pamięć roboczą
     cudaFree(d_results);
    
     // Update timers
@@ -224,10 +215,6 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
               << std::chrono::duration_cast<std::chrono::milliseconds>(t2_eval_prep - t1_prep).count() << " ms, "
               << "Evaluator Struct H2D: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(t3_eval_h2d - t2_eval_prep).count() << " ms, "
-              << "ops_working CPU memcpy: " // This will be removed in Krok 3
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t4_ops_memcpy_cpu - t3_eval_h2d).count() << " ms, "
-              << "ops_working H2D: " // This will be removed in Krok 3
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t5_ops_h2d - t4_ops_memcpy_cpu).count() << " ms, "
               << "Kernel launch+sync: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(t7_kernel_sync - t6_kernel_launch).count() << " ms, "
               << "Results D2H: "

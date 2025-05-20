@@ -14,14 +14,18 @@ BatchJobShopGPUData JobShopDataGPU::PrepareBatchCPU(const std::vector<JobShopDat
     batch.processingTimesOffsets.push_back(0);
 
     for (const auto& problem : problems) {
+        int current_problem_total_ops = 0; // Licznik operacji dla bieżącego problemu
+
         // Jobs
         for (const auto& job : problem.jobs) {
             GPUJob gpuJob;
             gpuJob.id = job.id;
             gpuJob.type = job.type;
-            gpuJob.operationsOffset = batch.operations.size();
+            gpuJob.operationsOffset = batch.operations.size(); // To jest offset w globalnym buforze operacji batcha
             gpuJob.operationCount = job.operations.size();
             batch.jobs.push_back(gpuJob);
+
+            current_problem_total_ops += job.operations.size(); // Sumuj operacje dla problemu
 
             // Operations
             for (const auto& op : job.operations) {
@@ -58,6 +62,7 @@ BatchJobShopGPUData JobShopDataGPU::PrepareBatchCPU(const std::vector<JobShopDat
         gpuProblem.numMachines = problem.numMachines;
         gpuProblem.numJobs = problem.numJobs;
         gpuProblem.numOpTypes = problem.numOpTypes;
+        gpuProblem.totalOpsCount = current_problem_total_ops; // <<< USTAW POLE totalOpsCount
         gpuProblem.jobs = nullptr;
         gpuProblem.operations = nullptr;
         gpuProblem.eligibleMachines = nullptr;
@@ -114,17 +119,19 @@ void JobShopDataGPU::UploadBatchToGPU(
     cudaMemcpy(d_procTimes, batch.processingTimes.data(), batch.processingTimes.size() * sizeof(int), cudaMemcpyHostToDevice);
 
     // Prepare GPUProblem with device pointers
-    std::vector<GPUProblem> gpuProblems = batch.gpuProblems;
+    // Create a temporary host-side vector to modify before copying to device
+    std::vector<GPUProblem> host_gpuProblems = batch.gpuProblems; 
     for (int i = 0; i < numProblems; ++i) {
-        gpuProblems[i].jobs = d_jobs + batch.jobsOffsets[i];
-        gpuProblems[i].operations = d_ops + batch.operationsOffsets[i];
-        gpuProblems[i].eligibleMachines = d_eligible + batch.eligibleOffsets[i];
-        gpuProblems[i].successorsIDs = d_succ + batch.successorsOffsets[i];
-        gpuProblems[i].processingTimes = d_procTimes + batch.processingTimesOffsets[i];
+        host_gpuProblems[i].jobs = d_jobs + batch.jobsOffsets[i];
+        host_gpuProblems[i].operations = d_ops + batch.operationsOffsets[i]; // This points to the template operations for this problem
+        host_gpuProblems[i].eligibleMachines = d_eligible + batch.eligibleOffsets[i];
+        host_gpuProblems[i].successorsIDs = d_succ + batch.successorsOffsets[i];
+        host_gpuProblems[i].processingTimes = d_procTimes + batch.processingTimesOffsets[i];
+        // host_gpuProblems[i].totalOpsCount is already set in PrepareBatchCPU
     }
 
     cudaMalloc(&d_gpuProblems, numProblems * sizeof(GPUProblem));
-    cudaMemcpy(d_gpuProblems, gpuProblems.data(), numProblems * sizeof(GPUProblem), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_gpuProblems, host_gpuProblems.data(), numProblems * sizeof(GPUProblem), cudaMemcpyHostToDevice);
 }
 
 // Free GPU memory

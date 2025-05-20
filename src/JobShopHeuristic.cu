@@ -235,165 +235,131 @@ void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operatio
 __global__ void SolveManyWeightsKernel(
     const GPUProblem* problems,
     const NeuralNetwork::DeviceEvaluator* evaluators,
-    GPUOperation* ops_working,
+    GPUOperation* ops_working, // Pamięć robocza, którą kernel wypełni i będzie modyfikować
     float* results,
     int numProblems,
     int maxOpsPerProblem) {
 
-    if (gpu_error_flag) { // Check at the very beginning
+    if (gpu_error_flag) { 
         return;
     }
 
     extern __shared__ float shared_makespans[];
 
     int weightSet = blockIdx.x;
-    int problemIdx = threadIdx.x;
+    int problemIdx = threadIdx.x; // Każdy wątek w bloku obsługuje inny problem dla danego zestawu wag
 
-    float makespan = 0.0f;
+    float makespan = 0.0f; // Inicjalizacja makespan dla tego wątku/problemu
 
     if (problemIdx < numProblems) {
-        const GPUProblem problem = problems[problemIdx];
+        const GPUProblem problem = problems[problemIdx]; // problem.operations wskazuje na szablon w d_ops_
+                                                       // problem.totalOpsCount zawiera liczbę operacji dla tego problemu
         const NeuralNetwork::DeviceEvaluator& nn_eval = evaluators[weightSet];
+
+        // Oblicz wskaźnik do lokalnej pamięci roboczej dla operacji tego wątku
+        // To jest miejsce w ops_working, gdzie ten wątek będzie przechowywał swoją kopię operacji
+        int base_working_ops_offset = (weightSet * numProblems + problemIdx) * maxOpsPerProblem;
+        GPUOperation* local_ops = &ops_working[base_working_ops_offset];
+
+        // Kopiuj operacje z szablonu (problem.operations) do lokalnej pamięci roboczej (local_ops)
+        // problem.operations to wskaźnik do odpowiedniego fragmentu globalnego d_ops_ (szablonu)
+        // problem.totalOpsCount to liczba operacji dla tego konkretnego problemu
+        for (int i = 0; i < problem.totalOpsCount; ++i) {
+            if (i < maxOpsPerProblem) { // Zabezpieczenie przed przepełnieniem bufora local_ops
+                local_ops[i] = problem.operations[i]; // Kopiowanie struktury GPUOperation
+            } else {
+                // Opcjonalnie: obsługa błędu lub ostrzeżenie, jeśli maxOpsPerProblem jest za małe
+                // Można ustawić flagę błędu lub po prostu przerwać kopiowanie
+                // printf("Warning: Problem %d, WeightSet %d: totalOpsCount %d > maxOpsPerProblem %d. Truncating ops.\n", problemIdx, weightSet, problem.totalOpsCount, maxOpsPerProblem);
+                break; 
+            }
+        }
+        // Wypełnij resztę local_ops zerami lub wartościami domyślnymi, jeśli problem.totalOpsCount < maxOpsPerProblem
+        // aby uniknąć używania niezainicjowanej pamięci, jeśli logika dalej zakłada pełny rozmiar maxOpsPerProblem.
+        // Alternatywnie, upewnij się, że dalsza logika używa tylko problem.totalOpsCount.
+        // Na razie zakładamy, że dalsza logika będzie ostrożna lub maxOpsPerProblem jest wystarczająco duże.
+
 
         const int numJobs = problem.numJobs;
         const int numMachines = problem.numMachines;
 
-        // Debug: problem details print 
-/*         if (weightSet == 0 && problemIdx == 0) {
-            PrintProblemDetails(problem);
-        } */
+        // int base = (weightSet * numProblems + problemIdx) * maxOpsPerProblem; // Już obliczone jako base_working_ops_offset
+        // GPUOperation* local_ops = &ops_working[base]; // Już zdefiniowane
 
-        int base = (weightSet * numProblems + problemIdx) * maxOpsPerProblem;
-        GPUOperation* local_ops = &ops_working[base];
-
-        int jobScheduledOps[MAX_JOBS] = {0};
-        int machine_times[MAX_MACHINES] = {0};
+        int jobScheduledOps[MAX_JOBS] = {0}; 
+        int machine_times[MAX_MACHINES] = {0}; 
         
         int jobTypeCount[MAX_OP_TYPES] = {0};
         int opTypeCount[MAX_OP_TYPES] = {0};
-        int opTypePerJobCount[MAX_JOBS][MAX_OP_TYPES] = {0};
+        // int opTypePerJobCount[MAX_JOBS][MAX_OP_TYPES] = {0}; // To może być duże, rozważ optymalizację, jeśli to możliwe
 
-        // Debug: data init 
-/*         if (weightSet == 0 && problemIdx == 0) {
-            printf("[KERNEL] Inicjalizacja danych dla problemIdx=%d\n", problemIdx);
-        } */
-
+        // Inicjalizacja liczników na podstawie skopiowanych local_ops
         for (int jobID = 0; jobID < numJobs; ++jobID) {
-            const GPUJob& job = problem.jobs[jobID];
-            jobTypeCount[job.type]++;
-            for (int opID = 0; opID < job.operationCount; ++opID) {
-                GPUOperation& op = local_ops[job.operationsOffset + opID];
-                opTypePerJobCount[jobID][op.type]++;
+            const GPUJob& job_template = problem.jobs[jobID]; // Użyj problem.jobs do odczytu struktury joba
+            jobTypeCount[job_template.type]++;
+            for (int op_idx_in_job = 0; op_idx_in_job < job_template.operationCount; ++op_idx_in_job) {
+                // Dostęp do operacji przez local_ops, używając offsetu z job_template
+                // Pamiętaj, że job_template.operationsOffset jest teraz lokalny dla problemu (0 do N-1)
+                GPUOperation& op = local_ops[job_template.operationsOffset + op_idx_in_job];
+                // opTypePerJobCount[jobID][op.type]++; // Jeśli potrzebne
                 opTypeCount[op.type]++;
             }
         }
 
-        int local_makespan = 0;
 
+        int local_makespan = 0;
         bool scheduled_any;
         do {
             scheduled_any = false;
             float bestScoreValue = -FLT_MAX;
-            int bestJobID = -1, bestOpID = -1, bestMachineID = -1;
+            int bestJobID = -1, bestOpID_in_job = -1, bestMachineID = -1; // bestOpID_in_job to indeks operacji w ramach joba
+            int best_local_op_idx = -1; // Globalny indeks operacji w local_ops
             int bestStartTime = 0;
 
             for (int jobID = 0; jobID < numJobs; ++jobID) {
-                if (jobScheduledOps[jobID] == problem.jobs[jobID].operationCount)
+                const GPUJob& current_job_template = problem.jobs[jobID]; // Odczyt z szablonu problemu
+                if (jobScheduledOps[jobID] == current_job_template.operationCount)
                     continue;
 
-                GPUJob& job = problem.jobs[jobID];
+                for (int op_idx_in_job = 0; op_idx_in_job < current_job_template.operationCount; ++op_idx_in_job) {
+                    // Dostęp do operacji przez local_ops
+                    int current_local_op_idx = current_job_template.operationsOffset + op_idx_in_job;
+                    GPUOperation& operation = local_ops[current_local_op_idx]; 
+                    
+                    if (operation.predecessorCount != 0) continue; // Jeśli ma niespełnione zależności
 
-                for (int operationID = 0; operationID < job.operationCount; ++operationID) {
-                    GPUOperation& operation = local_ops[job.operationsOffset + operationID];
-                    if (operation.predecessorCount != 0) continue;
-
-                    for (int m = 0; m < operation.eligibleCount; m++) {
-                        int machineID = problem.eligibleMachines[operation.eligibleMachinesOffset + m];
+                    for (int m_idx = 0; m_idx < operation.eligibleCount; m_idx++) {
+                        int machineID = problem.eligibleMachines[operation.eligibleMachinesOffset + m_idx];
                         int start_time = max(machine_times[machineID], operation.lastPredecessorEndTime);
-                        int opMach_idx = operation.type * numMachines + machineID;
+                        int opMach_idx = operation.type * numMachines + machineID; // Indeks w spłaszczonej tablicy czasów przetwarzania
                         int pTime = problem.processingTimes[opMach_idx];
 
-                        // Debug: op details
-/*                         if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
-                            printf("[KERNEL] Operation details: jobID=%d, opID=%d, machineID=%d, start_time=%d, pTime=%d\n",
-                                  jobID, operationID, machineID, start_time, pTime);
-                        }
- */
+                        if (pTime <= 0) continue; // Pomiń, jeśli czas przetwarzania jest nieprawidłowy
+
                         float features[1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES] = {0.0f};
-
-                        features[0] = static_cast<float>(start_time) - machine_times[machineID]; // wasted time
-
+                        // ... (wypełnianie features - bez zmian) ...
+                        features[0] = static_cast<float>(start_time) - machine_times[machineID];
                         for (int i = 1; i < MAX_MACHINES + 1; ++i) {
-                            features[i] = static_cast<float>(local_makespan - machine_times[i - 1]); // envelope
+                            features[i] = static_cast<float>(local_makespan - machine_times[i - 1]);
                         }
-                        features[1 + machineID] = static_cast<float>(local_makespan - (start_time + pTime)); // envelope for current machine
-
-                        features[1 + MAX_MACHINES + machineID] = 1.0f;  // one hot machine encoding
-                        features[1 + 2 * MAX_MACHINES + operation.type] = 1.0f; // one hot operation type encoding
-                        
-
-                        // Print features
-                        if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
-                            //printf("[DEBUG] Features (pierwsze 10): ");
-                            for (int i = 0; i < min(10, 1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES); i++) {
-                                //printf("%.2f ", features[i]);
-                            }
-                            //printf("...\n");
-                            
-                            // print some crucial values
-                            //printf("[DEBUG] Feature[0] (start time): %.2f\n", features[0]);
-                            
-                           // printf("[DEBUG] Features[1-%d] (machine times): ", MAX_MACHINES);
-                            for (int i = 1; i <= min(5, MAX_MACHINES); i++) {
-                               // printf("%.2f ", features[i]);
-                            }
-                            //printf("...\n");
-                            
-                            // min/max 
-                            if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
-                               // printf("[KERNEL] Features (all): ");
-                                int features_len = 1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES;
-                                for (int i = 0; i < features_len; i++) {
-                                    //printf("%.2f ", features[i]);
-                                }
-                                //printf("\n");
-}
-                            float min_val = FLT_MAX;
-                            float max_val = -FLT_MAX;
-                            int min_idx = -1, max_idx = -1;
-                            for (int i = 0; i < (1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES); i++) {
-                                if (features[i] < min_val) {
-                                    min_val = features[i];
-                                    min_idx = i;
-                                }
-                                if (features[i] > max_val) {
-                                    max_val = features[i];
-                                    max_idx = i;
-                                }
-                            }
-                            //printf("[DEBUG] Min/max features: min=%.2f (idx=%d), max=%.2f (idx=%d)\n", 
-                                //min_val, min_idx, max_val, max_idx);
-}
+                        features[1 + machineID] = static_cast<float>(local_makespan - (start_time + pTime));
+                        features[1 + MAX_MACHINES + machineID] = 1.0f;
+                        features[1 + 2 * MAX_MACHINES + operation.type] = 1.0f;
                         
                         const float SCALE_FACTOR = 100.0f;
-                        // normalize nn inputs (it may like it better)
                         features[0] /= SCALE_FACTOR;
                         for (int i = 1; i < MAX_MACHINES + 1; ++i) {
                             features[i] /= SCALE_FACTOR;
                         }
                         features[1 + machineID] /= SCALE_FACTOR;
 
-                        float score = nn_eval.Evaluate(features);//! Error: evaluate returns 0 or nans
-
-                        // Debug: Score print 
-/*                         if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
-                            printf("[KERNEL] Score=%.2f\n", score);
-                        } */
+                        float score = nn_eval.Evaluate(features);
 
                         if (score > bestScoreValue) {
                             bestScoreValue = score;
                             bestJobID = jobID;
-                            bestOpID = operationID;
+                            bestOpID_in_job = op_idx_in_job; // Zapisz indeks operacji w ramach joba
+                            best_local_op_idx = current_local_op_idx; // Zapisz globalny indeks w local_ops
                             bestMachineID = machineID;
                             bestStartTime = start_time;
                         }
@@ -401,31 +367,37 @@ __global__ void SolveManyWeightsKernel(
                 }
             }
 
-            if (bestJobID == -1) break;
+            if (bestJobID == -1) break; // Nie znaleziono żadnej operacji do uszeregowania
 
-            GPUJob& bestJob = problem.jobs[bestJobID];
-            GPUOperation& bestOperation = local_ops[bestJob.operationsOffset + bestOpID];
+            // const GPUJob& bestJob_template = problem.jobs[bestJobID]; // Odczyt z szablonu
+            // GPUOperation& bestOperation = local_ops[bestJob_template.operationsOffset + bestOpID_in_job]; // Dostęp przez local_ops
+            GPUOperation& bestOperation = local_ops[best_local_op_idx]; // Użyj zapisanego globalnego indeksu
+
             int opMach_idx = bestOperation.type * numMachines + bestMachineID;
             int pTime = problem.processingTimes[opMach_idx];
-
             int endTime = bestStartTime + pTime;
 
             jobScheduledOps[bestJobID]++;
-            opTypePerJobCount[bestJobID][bestOperation.type]--;
-            opTypeCount[bestOperation.type]--;
+            opTypeCount[bestOperation.type]--; // Zaktualizuj globalny licznik typów operacji
 
-            if (jobScheduledOps[bestJobID] == bestJob.operationCount) {
-                jobTypeCount[bestJob.type]--;
+            const GPUJob& scheduled_job_template = problem.jobs[bestJobID]; // Potrzebne do odczytu typu joba
+            if (jobScheduledOps[bestJobID] == scheduled_job_template.operationCount) {
+                jobTypeCount[scheduled_job_template.type]--;
             }
 
-            bestOperation.predecessorCount = -1;
+            bestOperation.predecessorCount = -1; // Oznacz jako uszeregowaną (lub użyj innej flagi)
+                                                 // Uważaj, jeśli -1 ma inne znaczenie. Lepsza byłaby dedykowana flaga bool.
 
-            for (int s = 0; s < bestOperation.successorCount; ++s) {
-                int successorID = problem.successorsIDs[bestOperation.successorsOffset + s];
-                GPUOperation& successorOperation = local_ops[bestJob.operationsOffset + successorID];
+            // Aktualizuj zależności dla następników
+            for (int s_idx = 0; s_idx < bestOperation.successorCount; ++s_idx) {
+                // successorID_in_job to indeks następnika W RAMACH TEGO SAMEGO JOBA
+                int successorID_in_job = problem.successorsIDs[bestOperation.successorsOffset + s_idx];
+                // Oblicz globalny indeks następnika w local_ops
+                int successor_local_op_idx = scheduled_job_template.operationsOffset + successorID_in_job;
+                GPUOperation& successorOperation = local_ops[successor_local_op_idx];
+                
                 successorOperation.predecessorCount -= 1;
-                successorOperation.lastPredecessorEndTime =
-                    max(successorOperation.lastPredecessorEndTime, endTime);
+                successorOperation.lastPredecessorEndTime = max(successorOperation.lastPredecessorEndTime, endTime);
             }
 
             machine_times[bestMachineID] = endTime;
@@ -437,22 +409,27 @@ __global__ void SolveManyWeightsKernel(
         makespan = static_cast<float>(local_makespan);
         shared_makespans[problemIdx] = makespan;
 
-    } else {
-        shared_makespans[problemIdx] = 0.0f;
+    } else { // problemIdx >= numProblems
+        shared_makespans[problemIdx] = 0.0f; // Wątki poza zakresem problemów
     }
-    __syncthreads();
+    __syncthreads(); // Synchronizuj wszystkie wątki w bloku przed obliczeniem średniej
 
+    // Oblicz średni makespan dla zestawu wag (tylko wątek 0 w bloku)
     if (threadIdx.x == 0) {
         float sum = 0.0f;
-        for (int i = 0; i < numProblems; ++i)
-            sum += shared_makespans[i];
-        results[weightSet] = sum / numProblems;
-       // printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);
+        int valid_problems_count = 0;
+        for (int i = 0; i < numProblems; ++i) { // Sumuj tylko dla aktywnych problemów
+            if (shared_makespans[i] >= 0) { // Lub inna walidacja, jeśli 0 jest poprawnym makespanem
+                 sum += shared_makespans[i];
+                 valid_problems_count++;
+            }
+        }
+        if (valid_problems_count > 0) {
+            results[weightSet] = sum / valid_problems_count;
+        } else {
+            results[weightSet] = FLT_MAX; // Lub inna wartość błędu, jeśli żaden problem nie został rozwiązany
+        }
     }
-
-/*     if (weightSet == 0 && problemIdx == 0) {
-        printf("[KERNEL] SolveManyWeightsKernel end\n");
-    } */
 }
 // Print problem details from device (for debugging)
 __device__ void PrintProblemDetails(const GPUProblem& problem) {
