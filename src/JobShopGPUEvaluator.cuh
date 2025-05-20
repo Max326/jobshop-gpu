@@ -30,6 +30,7 @@ private:
 
     std::vector<JobShopData> cpu_problems_; // wszystkie problemy w RAM
     int num_problems_to_evaluate_ = 0;
+    int current_num_problems_ = 0;
     std::vector<int> nn_topology_;
     int nn_total_params_ = 0;
     int max_ops_per_problem_ = 0;

@@ -41,10 +41,12 @@ BatchJobShopGPUData JobShopDataGPU::PrepareBatchCPU(const std::vector<JobShopDat
             }
         }
 
-        // Processing times (flattened)
-        for (const auto& row : problem.processingTimes)
-            for (int t : row)
-                batch.processingTimes.push_back(t);
+        // Transpose processingTimes to [machine][opType]
+        for (int machine = 0; machine < problem.numMachines; ++machine) {
+            for (int opType = 0; opType < problem.numOpTypes; ++opType) {
+                batch.processingTimes.push_back(problem.processingTimes[opType][machine]);
+            }
+        }
 
         // Offsets for this problem
         batch.jobsOffsets.push_back(batch.jobs.size());
@@ -82,22 +84,66 @@ void JobShopDataGPU::UploadBatchToGPU(
 {
     numProblems = batch.numProblems;
 
-    // Make offsets local for each problem
-    for (int i = 0; i < numProblems; ++i) {
-        int opBase = batch.operationsOffsets[i];
-        int eligibleBase = batch.eligibleOffsets[i];
-        int succBase = batch.successorsOffsets[i];
+    // 1. Create texture objects for each problem
+    for(int i = 0; i < numProblems; ++i) {
+        const int numOpTypes = batch.gpuProblems[i].numOpTypes;
+        const int numMachines = batch.gpuProblems[i].numMachines;
+        const int dataOffset = batch.processingTimesOffsets[i];
+
+        // Create CUDA array
+        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<int>();
+        cudaArray* cuArray;
+        cudaMallocArray(&cuArray, &channelDesc, numMachines, numOpTypes);
+
+        // Copy processing times (transposed)
+        cudaMemcpy2DToArray(
+            cuArray,
+            0, 0,
+            batch.processingTimes.data() + dataOffset,
+            numMachines * sizeof(int), // Pitch = machine count * element size
+            numMachines, 
+            numOpTypes,
+            cudaMemcpyHostToDevice
+        );
+
+        // Create texture object
+        cudaResourceDesc resDesc{};
+        resDesc.resType = cudaResourceTypeArray;
+        resDesc.res.array.array = cuArray;
+
+        cudaTextureDesc texDesc{};
+        texDesc.addressMode[0] = cudaAddressModeClamp;
+        texDesc.addressMode[1] = cudaAddressModeClamp;
+        texDesc.filterMode = cudaFilterModePoint;
+        texDesc.readMode = cudaReadModeElementType;
+
+        cudaCreateTextureObject(
+            &batch.gpuProblems[i].processingTimesTex,
+            &resDesc,
+            &texDesc,
+            nullptr
+        );
+
+        batch.gpuProblems[i].processingTimesArray = cuArray;
+    }
+
+    // 2. Adjust offsets for each problem
+    for(int i = 0; i < numProblems; ++i) {
+        const int opBase = batch.operationsOffsets[i];
+        const int eligibleBase = batch.eligibleOffsets[i];
+        const int succBase = batch.successorsOffsets[i];
 
         for(int j = batch.jobsOffsets[i]; j < batch.jobsOffsets[i+1]; ++j) {
             batch.jobs[j].operationsOffset -= opBase;
         }
+
         for(int o = batch.operationsOffsets[i]; o < batch.operationsOffsets[i+1]; ++o) {
             batch.operations[o].eligibleMachinesOffset -= eligibleBase;
             batch.operations[o].successorsOffset -= succBase;
         }
     }
 
-    // Copy data to GPU
+    // 3. Copy data to device
     cudaMalloc(&d_jobs, batch.jobs.size() * sizeof(GPUJob));
     cudaMemcpy(d_jobs, batch.jobs.data(), batch.jobs.size() * sizeof(GPUJob), cudaMemcpyHostToDevice);
 
@@ -110,34 +156,54 @@ void JobShopDataGPU::UploadBatchToGPU(
     cudaMalloc(&d_succ, batch.successorsIDs.size() * sizeof(int));
     cudaMemcpy(d_succ, batch.successorsIDs.data(), batch.successorsIDs.size() * sizeof(int), cudaMemcpyHostToDevice);
 
-    cudaMalloc(&d_procTimes, batch.processingTimes.size() * sizeof(int));
-    cudaMemcpy(d_procTimes, batch.processingTimes.data(), batch.processingTimes.size() * sizeof(int), cudaMemcpyHostToDevice);
-
-    // Prepare GPUProblem with device pointers
+    // 4. Prepare final GPUProblem array
     std::vector<GPUProblem> gpuProblems = batch.gpuProblems;
-    for (int i = 0; i < numProblems; ++i) {
+    for(int i = 0; i < numProblems; ++i) {
         gpuProblems[i].jobs = d_jobs + batch.jobsOffsets[i];
         gpuProblems[i].operations = d_ops + batch.operationsOffsets[i];
         gpuProblems[i].eligibleMachines = d_eligible + batch.eligibleOffsets[i];
         gpuProblems[i].successorsIDs = d_succ + batch.successorsOffsets[i];
-        gpuProblems[i].processingTimes = d_procTimes + batch.processingTimesOffsets[i];
+        // processingTimes pointer is no longer used in kernel
     }
 
     cudaMalloc(&d_gpuProblems, numProblems * sizeof(GPUProblem));
     cudaMemcpy(d_gpuProblems, gpuProblems.data(), numProblems * sizeof(GPUProblem), cudaMemcpyHostToDevice);
 }
 
+
 // Free GPU memory
-void JobShopDataGPU::FreeBatchGPUData(GPUProblem* d_gpuProblems,
-                                      GPUJob* d_jobs, GPUOperation* d_ops,
-                                      int* d_eligible, int* d_succ, int* d_procTimes) {
-    if(d_gpuProblems) cudaFree(d_gpuProblems);
+void JobShopDataGPU::FreeBatchGPUData(
+    GPUProblem* d_gpuProblems,
+    GPUJob* d_jobs, 
+    GPUOperation* d_ops,
+    int* d_eligible, 
+    int* d_succ, 
+    int* d_procTimes,
+    int numProblems)  // Add numProblems parameter
+{
+    if(d_gpuProblems) {
+        // Copy problems back to host to access texture/array pointers
+        std::vector<GPUProblem> h_gpuProblems(numProblems);
+        cudaMemcpy(h_gpuProblems.data(), d_gpuProblems, 
+                  numProblems * sizeof(GPUProblem),
+                  cudaMemcpyDeviceToHost);
+
+        // Destroy per-problem resources
+        for(int i = 0; i < numProblems; ++i) {
+            cudaDestroyTextureObject(h_gpuProblems[i].processingTimesTex);
+            cudaFreeArray(h_gpuProblems[i].processingTimesArray);
+        }
+        
+        cudaFree(d_gpuProblems);
+    }
+
     if(d_jobs) cudaFree(d_jobs);
     if(d_ops) cudaFree(d_ops);
     if(d_eligible) cudaFree(d_eligible);
     if(d_succ) cudaFree(d_succ);
     if(d_procTimes) cudaFree(d_procTimes);
 }
+
 
 // Download from GPU (not implemented)
 void JobShopDataGPU::DownloadFromGPU(GPUProblem&, JobShopData&) {

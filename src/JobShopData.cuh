@@ -233,6 +233,8 @@ struct GPUProblem {
     int* eligibleMachines;       // Device pointer
     int* successorsIDs;          // Device pointer
     int* processingTimes;        // Flattened [opType][machine]
+    cudaTextureObject_t processingTimesTex;
+    cudaArray_t processingTimesArray;  // Add this line
 };
 
 // Batch structure for GPU upload
@@ -265,9 +267,15 @@ public:
         int*& d_succ,
         int*& d_procTimes,
         int& numProblems);
-    static void FreeBatchGPUData(GPUProblem* d_gpuProblems,
-        GPUJob* d_jobs, GPUOperation* d_ops,
-        int* d_eligible, int* d_succ, int* d_procTimes);
+
+    static void FreeBatchGPUData(
+        GPUProblem* d_gpuProblems,
+        GPUJob* d_jobs, 
+        GPUOperation* d_ops,
+        int* d_eligible, 
+        int* d_succ, 
+        int* d_procTimes,
+        int numProblems);
     void DownloadFromGPU(GPUProblem& gpuProblem, JobShopData& cpuProblem);
 };
 

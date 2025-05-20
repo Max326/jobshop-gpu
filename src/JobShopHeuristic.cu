@@ -258,14 +258,13 @@ __global__ void SolveManyWeightsKernel(
 		const NeuralNetwork::DeviceEvaluator& nn_eval = evaluators[weightSet];
 
 		const int numJobs = problem.numJobs;
-		const int numMachines = problem.numMachines;
 
 		// Debug: problem details print
 		/*         if (weightSet == 0 && problemIdx == 0) {
 					PrintProblemDetails(problem);
 				} */
 
-		int base = (weightSet * numProblems + problemIdx) * maxOpsPerProblem;
+		const int base = (weightSet * numProblems + problemIdx) * maxOpsPerProblem;
 		GPUOperation* local_ops = &ops_working[base];
 
 		int jobScheduledOps[MAX_JOBS] = {0};
@@ -312,8 +311,7 @@ __global__ void SolveManyWeightsKernel(
 					for(int m = 0; m < operation.eligibleCount; m++) {
 						int machineID = problem.eligibleMachines[operation.eligibleMachinesOffset + m];
 						int start_time = max(machine_times[machineID], operation.lastPredecessorEndTime);
-						int opMach_idx = operation.type * numMachines + machineID;
-						int pTime = problem.processingTimes[opMach_idx];
+						int pTime = tex2D<int>(problem.processingTimesTex, machineID, operation.type);
 
 						// Debug: op details
 						/*                         if (weightSet == 0 && problemIdx == 0 && jobID == 0 && operationID == 0) {
@@ -364,8 +362,7 @@ __global__ void SolveManyWeightsKernel(
 
 			GPUJob& bestJob = problem.jobs[bestJobID];
 			GPUOperation& bestOperation = local_ops[bestJob.operationsOffset + bestOpID];
-			int opMach_idx = bestOperation.type * numMachines + bestMachineID;
-			int pTime = problem.processingTimes[opMach_idx];
+			const int pTime = tex2D<int>(problem.processingTimesTex, bestMachineID, bestOperation.type);
 
 			int endTime = bestStartTime + pTime;
 

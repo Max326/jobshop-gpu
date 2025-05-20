@@ -29,7 +29,19 @@ JobShopGPUEvaluator::~JobShopGPUEvaluator() {
 }
 
 void JobShopGPUEvaluator::FreeProblemDataGPU() {
-    JobShopDataGPU::FreeBatchGPUData(d_problems_, d_jobs_, d_ops_, d_eligible_, d_succ_, d_procTimes_);
+    if(current_num_problems_ > 0) {
+        JobShopDataGPU::FreeBatchGPUData(
+            d_problems_, 
+            d_jobs_, 
+            d_ops_,
+            d_eligible_, 
+            d_succ_, 
+            d_procTimes_,
+            current_num_problems_  // Pass the stored count
+        );
+        current_num_problems_ = 0;
+    }
+    
     d_problems_ = nullptr;
     d_jobs_ = nullptr;
     d_ops_ = nullptr;
@@ -38,19 +50,22 @@ void JobShopGPUEvaluator::FreeProblemDataGPU() {
     d_procTimes_ = nullptr;
 }
 
+
 void JobShopGPUEvaluator::PrepareProblemDataGPU(const std::vector<JobShopData>& batch) {
     FreeProblemDataGPU();
     cpu_batch_data_ = JobShopDataGPU::PrepareBatchCPU(batch);
     num_problems_to_evaluate_ = batch.size();
-
+    current_num_problems_ = batch.size();  // Store the count
+    
     int num_problems_on_gpu = 0;
     JobShopDataGPU::UploadBatchToGPU(
-        cpu_batch_data_, d_problems_, d_jobs_, d_ops_, 
+        cpu_batch_data_, d_problems_, d_jobs_, d_ops_,
         d_eligible_, d_succ_, d_procTimes_, num_problems_on_gpu
     );
-    if (num_problems_on_gpu != num_problems_to_evaluate_)
-        throw std::runtime_error("Mismatch in number of problems uploaded to GPU.");
+    if (num_problems_on_gpu != current_num_problems_)
+        throw std::runtime_error("Mismatch in uploaded problem count");
 }
+
 
 bool JobShopGPUEvaluator::SetCurrentBatch(int batch_start, int batch_size) {
     auto t0 = std::chrono::high_resolution_clock::now();
