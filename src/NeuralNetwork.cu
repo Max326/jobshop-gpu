@@ -179,16 +179,6 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
 		}
 	}
 
-	// 1. Validate input size using d_topology
-	if(this->num_layers == 0 || this->d_topology[0] > MAX_LAYER_SIZE || this->d_topology[0] <= 0) {
-		if(threadIdx.x == 0 && blockIdx.x == 0) {
-			printf("[ERROR] Invalid topology configuration\n");
-		}
-		NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid topology configuration");
-
-		return 0.0f;
-	}
-
 	// 2. Copy input (without printing)
 	for(int i = 0; i < this->d_topology[0]; i++) {
 		activations[i] = features[i];
@@ -209,78 +199,14 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
 		int in_size = this->d_topology[layer - 1];
 		int out_size = this->d_topology[layer];
 
-		if(out_size > MAX_LAYER_SIZE || out_size <= 0 || in_size <= 0) {
-			if(threadIdx.x == 0 && blockIdx.x == 0) {
-				printf("[ERROR] Invalid layer dimensions at layer %d\n", layer);
-			}
-			NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid layer dimensions");
-
-			return 0.0f;
-		}
 
 		for(int neuron = 0; neuron < out_size; neuron++) {
-			if(bias_offset + neuron >= total_biases_for_eval) {
-				if(threadIdx.x == 0 && blockIdx.x == 0) {
-					printf("[ERROR] Bias access out of bounds: %d >= %d\n",
-						   bias_offset + neuron, total_biases_for_eval);
-				}
-				NeuralNetwork::DeviceEvaluator::ReportAndAbort("Bias access out of bounds");
-				return 0.0f;
-			}
 			float sum = this->biases[bias_offset + neuron];
-
-			// Sprawdzamy bias
-			if(isnan(sum) || isinf(sum)) {
-				if(threadIdx.x == 0 && blockIdx.x == 0) {
-					printf("[ERROR] Invalid bias value at layer %d, neuron %d: %f\n",
-						   layer, neuron, sum);
-				}
-				NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid bias value");
-
-				return 0.0f;
-			}
 
 			for(int i = 0; i < in_size; i++) {
 				int weight_idx = weight_offset + neuron * in_size + i;
-				if(weight_idx >= total_weights_for_eval) {
-					if(threadIdx.x == 0 && blockIdx.x == 0) {
-						printf("[ERROR] Weight access out of bounds: %d >= %d\n",
-							   weight_idx, total_weights_for_eval);
-					}
-					NeuralNetwork::DeviceEvaluator::ReportAndAbort("Weight access out of bounds");
-					return 0.0f;
-				}
-
-				// Sprawdzamy wagę i aktywację
-				if(isnan(this->weights[weight_idx]) || isinf(this->weights[weight_idx])) {
-					if(threadIdx.x == 0 && blockIdx.x == 0) {
-						printf("[ERROR] Invalid weight at layer %d, neuron %d, input %d: %f\n",
-							   layer, neuron, i, this->weights[weight_idx]);
-					}
-					NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid weight");
-					return 0.0f;
-				}
-
-				if(isnan(activations[i]) || isinf(activations[i])) {
-					if(threadIdx.x == 0 && blockIdx.x == 0) {
-						printf("[ERROR] Invalid activation at layer %d, input %d: %f\n",
-							   layer - 1, i, activations[i]);
-					}
-					NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid activation");
-					return 0.0f;
-				}
 
 				sum += activations[i] * this->weights[weight_idx];
-			}
-
-			// Sprawdzamy sumę przed aktywacją
-			if(isnan(sum) || isinf(sum)) {
-				if(threadIdx.x == 0 && blockIdx.x == 0) {
-					printf("[ERROR] Invalid sum at layer %d, neuron %d: %f\n",
-						   layer, neuron, sum);
-				}
-				NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid sum");
-				return 0.0f;
 			}
 
 			activations[neuron] = ScaleTanh2(sum);
@@ -291,16 +217,6 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
 	}
 
 	float final_output = (this->d_topology[this->num_layers - 1] == 1) ? activations[0] : 0.0f;
-
-	// Print final output only for first thread and if it's non-zero
-	if(threadIdx.x == 0 && blockIdx.x == 0) {
-		if(isnan(final_output) || isinf(final_output)) {
-			printf("[ERROR] Final output is invalid: %f\n", final_output);
-			NeuralNetwork::DeviceEvaluator::ReportAndAbort("Final output is invalid");
-		} else if(final_output != 0.0f) {
-			// printf("[DEBUG] Block %d output: %.3f\n", blockIdx.x, final_output);
-		}
-	}
 
 	return final_output;
 }
