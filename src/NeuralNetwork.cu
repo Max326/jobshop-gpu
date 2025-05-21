@@ -236,7 +236,7 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float* features,
 
 	if(threadIdx.x == 0 && blockIdx.x == 0) {
 		for(int i = 0; i < this->d_topology[0]; i++) {
-			if(isnan(features[i]) || isinf(features[i])) {
+			if(isnan(features[i]) || isinf(features[i])) { //! deleting this slows down the kernel for some fucking reason
 				printf("[ERROR] Invalid input feature at index %d: %f\n", i, features[i]);
 				NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid input feature");
 				return 0.0f;

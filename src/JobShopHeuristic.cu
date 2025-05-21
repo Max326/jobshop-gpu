@@ -408,10 +408,6 @@ __global__ void SolveManyWeightsKernel(
 
 			if(bestJobID == -1) break;
 
-			// Debug: Score print
-			if(weightSet == 0 && problemIdxInBlock == 0 && threadIdx.x == 0 && bestJobID == 0 && bestOpID == 0) {
-				printf("[DEBUG] Initial Score=%.2f\n", bestScoreValue);
-			}
 
 			GPUJob& bestJob = problem.jobs[bestJobID];	// problem is const, so bestJob needs to be const if problem.jobs not modifiable
 			GPUOperation& bestOperation = local_ops[bestJob.operationsOffset + bestOpID];
@@ -459,7 +455,7 @@ __global__ void SolveManyWeightsKernel(
 		} else {
 			results[weightSet] = 0.0f;
 		}
-		printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);  // Keep for debug if needed
+		//printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);  // Keep for debug if needed
 	}
 }
 

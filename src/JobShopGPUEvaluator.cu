@@ -223,6 +223,9 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
 
     auto t8 = std::chrono::high_resolution_clock::now();
 
+    double min_makespan = (fvalues.size() > 0) ? fvalues.minCoeff() : 0.0;
+    std::cout << "[INFO] Best average makespan: " << min_makespan << std::endl;
+
     cudaFree(d_ops_working);
     cudaFree(d_results);
     cudaStreamDestroy(stream);
