@@ -96,13 +96,13 @@ NeuralNetwork::NeuralNetwork(const std::vector<int> &topology,
 	}
 
 	// 1. Validate topology
-	if(topology.empty()) {
+/* 	if(topology.empty()) {
 		throw std::invalid_argument("NeuralNetwork: Topology cannot be empty");
 	}
 
 	if(topology.size() < 2) {
 		throw std::invalid_argument("NeuralNetwork: Topology must have at least 2 layers (input/output)");
-	}
+	} */
 
 	Validate();
 	InitializeCudaData();
@@ -144,11 +144,6 @@ NeuralNetwork &NeuralNetwork::operator=(NeuralNetwork &&other) noexcept {
 
 // Funkcja aktywacji scaleTanh2
 __device__ float ScaleTanh2(float x) {
-    // Sprawdź, czy wejście jest NaN lub Inf
-    if(isnan(x) || isinf(x)) {
-        printf("[ERROR] ScaleTanh2 received invalid input: %f\n", x);
-        return 0.0f;
-    }
 
     constexpr float shift = 3.5f;
     constexpr float rshift = 1.0f / shift;
@@ -190,15 +185,8 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
         int out_size = this->d_topology[layer];
 
         for(int neuron = 0; neuron < out_size; neuron++) {
-            if(bias_offset + neuron >= total_biases_for_eval) {
-                if (threadIdx.x == 0 && blockIdx.x == 0) {
-                    printf("[ERROR] Bias access out of bounds: %d >= %d\n", 
-                           bias_offset + neuron, total_biases_for_eval);
-                    NeuralNetwork::DeviceEvaluator::ReportAndAbort("Bias access out of bounds");
 
-                }
-                return 0.0f;
-            }
+            
             float sum = this->d_biases[bias_offset + neuron];
 
             for(int i = 0; i < in_size; i++) {
