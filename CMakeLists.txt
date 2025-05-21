@@ -4,7 +4,7 @@ project(JobShopScheduler LANGUAGES CXX CUDA)  # Changed order
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CXX_STANDARD 17)
 
-set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+# set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 # Better CUDA flags for modern architectures
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --fmad=false --prec-div=true --prec-sqrt=true -lineinfo")
@@ -27,6 +27,11 @@ file(GLOB_RECURSE HEADER_SOURCES
 include_directories("/usr/include/eigen3")
 include_directories("${CMAKE_SOURCE_DIR}/libcmaes/include")
 include_directories("${CMAKE_SOURCE_DIR}/libcmaes/include/libcmaes")
+
+set(CMAKE_CXX_FLAGS "-O3")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DNDEBUG")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+
 
 link_directories(${CMAKE_SOURCE_DIR}/libcmaes/src/.libs/ )
 
