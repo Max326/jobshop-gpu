@@ -13,43 +13,8 @@ using json = nlohmann::json;
 JobShopHeuristic::JobShopHeuristic(const std::vector<int>& topology)
 	: neuralNetwork(topology) {}
 
-JobShopHeuristic::JobShopHeuristic(const std::string& filename)
-	: neuralNetwork(InitializeNetworkFromFile(filename)) {}
-
 JobShopHeuristic::JobShopHeuristic(NeuralNetwork&& net)
 	: neuralNetwork(std::move(net)) {}
-
-// Load neural network from file
-NeuralNetwork JobShopHeuristic::InitializeNetworkFromFile(const std::string& filename) {
-	std::string full_path = FileManager::GetFullPath(filename);
-
-	if(!std::filesystem::exists(full_path)) {
-		throw std::runtime_error("Network file not found: " + full_path);
-	}
-
-	std::ifstream in(full_path);
-	if(!in.is_open()) {
-		throw std::runtime_error("Cannot open file: " + full_path);
-	}
-
-	try {
-		json j;
-		in >> j;
-		in.close();
-
-		std::vector<int> loaded_topology = j["topology"];
-		auto weights = j["weights"].get<std::vector<std::vector<float>>>();
-		auto biases = j["biases"].get<std::vector<std::vector<float>>>();
-
-		if(loaded_topology.empty() || weights.empty() || biases.empty()) {
-			throw std::runtime_error("Invalid network data in file");
-		}
-
-		return NeuralNetwork(loaded_topology, &weights, &biases);
-	} catch(const std::exception& e) {
-		throw std::runtime_error("JSON parsing error: " + std::string(e.what()));
-	}
-}
 
 // Copy solution from GPU to CPU
 void JobShopHeuristic::CPUSolution::FromGPU(const SolutionManager::GPUSolutions& gpuSols, int problemId) {

@@ -45,44 +45,6 @@ public:
 	~NeuralNetwork();
 
 	std::vector<float> Forward(const std::vector<float>& input);
-	static std::vector<NeuralNetwork> LoadBatchFromJson(const std::string& filename);
-
-	void SaveToJson(const std::string& filename) const {
-		FileManager::EnsureDataDirExists();
-		std::string full_path = FileManager::GetFullPath(filename);
-
-		json j;
-		j["topology"] = topology;
-		j["weights"] = weights;
-		j["biases"] = biases;
-
-		std::ofstream out(full_path);
-		if(!out) {
-			throw std::runtime_error("Failed to save network to: " + full_path);
-		}
-		out << j.dump(4);
-		std::cout << "Network saved to: " << std::filesystem::absolute(full_path) << std::endl;
-	}
-
-	void LoadFromJson(const std::string& filename) {
-		std::string full_path = FileManager::GetFullPath(filename);
-
-		if(!std::filesystem::exists(full_path)) {
-			throw std::runtime_error("Network file not found: " + full_path);
-		}
-
-		std::ifstream in(full_path);
-		json j;
-		in >> j;
-		in.close();
-
-		topology = j["topology"].get<std::vector<int>>();
-		weights = j["weights"].get<std::vector<std::vector<float>>>();
-		biases = j["biases"].get<std::vector<std::vector<float>>>();
-
-		Validate();			   // Perform validation checks
-		InitializeCudaData();  // Initialize CUDA data after loading
-	}
 
 	void GenerateWeights();
 	void GenerateBiases();
@@ -111,8 +73,6 @@ public:
 			__threadfence_system();
 			asm("trap;");
 		}
-
-		__device__ float Evaluate(const float* features) const;
 
 		__device__ float Evaluate(const float* features, const float* p_shared_weights, const float* p_shared_biases) const;
 	};
@@ -162,18 +122,12 @@ public:
 	std::vector<int> topology;
 	std::vector<std::vector<float>> weights;
 	std::vector<std::vector<float>> biases;
-	std::vector<size_t> layerOffsets;
-	std::vector<size_t> biasOffsets;
 
-	const float* GetFlattenedWeights() const { return flattenedWeights.data(); }
-	const float* GetFlattenedBiases() const { return flattenedBiases.data(); }
 	const int* GetTopology() const { return topology.data(); }
 	int GetNumLayers() const { return topology.size(); }
 
 private:
 	static const int maxLayerSize = 101;
-	std::vector<float> flattenedWeights;
-	std::vector<float> flattenedBiases;
 
 private:
 	void InitializeCudaData();
@@ -189,9 +143,6 @@ private:
 			for(auto t: topology)
 				std::cout << t << " ";
 		}
-
-		// std::cout << "\nFirst weight layer: " << weights[0][0] << ", " << weights[0][1] << "...\n";
-		// std::cout << "First bias: " << biases[0][0] << "\n";
 	};
 };
 

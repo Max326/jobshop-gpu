@@ -91,8 +91,6 @@ public:
     NeuralNetwork neuralNetwork;
 
 private:
-    static NeuralNetwork InitializeNetworkFromFile(const std::string& filename);
-
     void UpdateSchedule(JobShopData& data, int jobId, int operationId, int machineId, CPUSolution& solution);
 };
 

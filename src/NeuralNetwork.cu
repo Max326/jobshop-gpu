@@ -11,26 +11,12 @@ __device__ __managed__ int gpu_error_flag = 0;
 
 void NeuralNetwork::InitializeCudaData() {
 	// 1. Calculate offsets for each layer's weights and biases
-	FlattenParams();
 
-	/* std::cout << "\nFlattened weights size: " << flattenedWeights.size() << "\n";
-	std::cout << "Flattened biases size: " << flattenedBiases.size() << "\n"; */
-
-	/* std::cout << "First few weights: ";
-	for(int i = 0; i < std::min(5, (int)flattenedWeights.size()); i++)
-		std::cout << flattenedWeights[i] << " ";
-		std::cout << "\n"; */
-
-	layerOffsets.resize(weights.size());
-	biasOffsets.resize(biases.size());
 	size_t total_weights = 0;
 	size_t total_biases = 0;
 
 	for(size_t i = 0; i < weights.size(); ++i) {
-		layerOffsets[i] = total_weights;
 		total_weights += weights[i].size();
-
-		biasOffsets[i] = total_biases;
 		total_biases += biases[i].size();
 	}
 
@@ -121,8 +107,6 @@ NeuralNetwork::NeuralNetwork(NeuralNetwork &&other) noexcept
 	: topology(std::move(other.topology)),
 	  weights(std::move(other.weights)),
 	  biases(std::move(other.biases)),
-	  layerOffsets(std::move(other.layerOffsets)),
-	  biasOffsets(std::move(other.biasOffsets)),
 	  cudaData(std::move(other.cudaData)) {
 	// Zabezpieczenie przed podwójnym zwolnieniem pamięci
 	other.cudaData.reset(nullptr);
@@ -134,8 +118,6 @@ NeuralNetwork &NeuralNetwork::operator=(NeuralNetwork &&other) noexcept {
 		topology = std::move(other.topology);
 		weights = std::move(other.weights);
 		biases = std::move(other.biases);
-		layerOffsets = std::move(other.layerOffsets);
-		biasOffsets = std::move(other.biasOffsets);
 		cudaData = std::move(other.cudaData);
 	}
 	return *this;
@@ -162,66 +144,6 @@ __device__ float ScaleTanh2(float x) {
 	} else {
 		return -1.0f - (shift - x) * 0.01;
 	}
-}
-
-__device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features) const {
-	const int MAX_LAYER_SIZE = maxLayerSize;
-	float activations[MAX_LAYER_SIZE];
-
-	// if (this->max_layer_size <= 0 || this->max_layer_size > 101 /*Match static const*/) { // Basic sanity check
-    //     return 0.0f; // Or handle error differently if critical path allows
-    // }
-	
-	if(threadIdx.x == 0 && blockIdx.x == 0) { // don't uncomment, it reduces computing time xD
-		for(int i = 0; i < this->d_topology[0]; i++) {
-			if(isnan(features[i]) || isinf(features[i])) {
-				printf("[ERROR] Invalid input feature at index %d: %f\n", i, features[i]);
-				NeuralNetwork::DeviceEvaluator::ReportAndAbort("Invalid input feature");
-				return 0.0f;
-			}
-		}
-	}
-	
-	// 2. Copy input (without printing)
-	for(int i = 0; i < this->d_topology[0]; i++) {
-		activations[i] = features[i];
-	}
-
-	int weight_offset = 0;
-	int bias_offset = 0;
-
-	// Calculate totals without printing
-	int total_weights_for_eval = 0;
-	int total_biases_for_eval = 0;
-	for(int i = 1; i < this->num_layers; i++) {
-		total_weights_for_eval += this->d_topology[i - 1] * this->d_topology[i];
-		total_biases_for_eval += this->d_topology[i];
-	}
-
-	for(int layer = 1; layer < this->num_layers; layer++) {
-		int in_size = this->d_topology[layer - 1];
-		int out_size = this->d_topology[layer];
-
-
-		for(int neuron = 0; neuron < out_size; neuron++) {
-			float sum = this->biases[bias_offset + neuron];
-
-			for(int i = 0; i < in_size; i++) {
-				int weight_idx = weight_offset + neuron * in_size + i;
-
-				sum += activations[i] * this->weights[weight_idx];
-			}
-
-			activations[neuron] = ScaleTanh2(sum);
-		}
-
-		weight_offset += in_size * out_size;
-		bias_offset += out_size;
-	}
-
-	float final_output = (this->d_topology[this->num_layers - 1] == 1) ? activations[0] : 0.0f;
-
-	return final_output;
 }
 
 // New Evaluate function using shared memory pointers
@@ -305,38 +227,4 @@ void NeuralNetwork::GenerateBiases() {
 		std::vector<float> layerBiases(topology[i], 0.1f);
 		this->biases.push_back(layerBiases);
 	}
-}
-
-void NeuralNetwork::FlattenParams() {
-	flattenedWeights.clear();
-	flattenedBiases.clear();
-
-	for(const auto &layer: weights) {
-		flattenedWeights.insert(flattenedWeights.end(),
-								layer.begin(), layer.end());
-	}
-
-	for(const auto &layer: biases) {
-		flattenedBiases.insert(flattenedBiases.end(),
-							   layer.begin(), layer.end());
-	}
-}
-
-std::vector<NeuralNetwork> NeuralNetwork::LoadBatchFromJson(const std::string &filename) {
-	std::string full_path = FileManager::GetFullPath(filename);
-	std::ifstream in(full_path);
-	if(!in) throw std::runtime_error("Cannot open weights file: " + full_path);
-
-	nlohmann::json all_nets;
-	in >> all_nets;
-	in.close();
-
-	std::vector<NeuralNetwork> networks;
-	for(const auto &j: all_nets) {
-		std::vector<int> topology = j["topology"].get<std::vector<int>>();
-		std::vector<std::vector<float>> weights = j["weights"].get<std::vector<std::vector<float>>>();
-		std::vector<std::vector<float>> biases = j["biases"].get<std::vector<std::vector<float>>>();
-		networks.emplace_back(topology, &weights, &biases);
-	}
-	return networks;
 }
