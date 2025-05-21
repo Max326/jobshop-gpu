@@ -125,6 +125,15 @@ void JobShopHeuristic::SolveBatchNew(
 	// + (nn_total_params_for_one_network * sizeof(float) for combined weights & biases of ONE network)
 	size_t dynamic_shared_mem_size = (threads_per_block * sizeof(float)) + (nn_total_params_for_one_network * sizeof(float));
 
+	// cudaDeviceProp deviceProp;
+	// cudaGetDeviceProperties(&deviceProp, 0);
+	// size_t maxSharedMemoryPerBlock = deviceProp.sharedMemPerBlock;
+
+	// if (dynamic_shared_mem_size > maxSharedMemoryPerBlock) {
+	// 	printf("ERROR: Requested shared memory (%zu) exceeds maximum (%zu)\n", dynamic_shared_mem_size, maxSharedMemoryPerBlock);
+	// 	return;
+	// }
+
 	cudaDeviceSetLimit(cudaLimitStackSize, 4096);
 	// int reset_value = 0; // If gpu_error_flag is used
 	// cudaMemcpyToSymbol(gpu_error_flag, &reset_value, sizeof(int), 0, cudaMemcpyHostToDevice);
