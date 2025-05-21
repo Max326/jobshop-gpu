@@ -458,7 +458,52 @@ __global__ void SolveManyWeightsKernel(
 		//printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);  // Keep for debug if needed
 	}
 }
+__global__ void InitializeWorkingOpsKernel(
+    GPUOperation* d_target_ops_pool,
+    const GPUOperation* d_source_batch_ops,
+    const int* d_source_ops_offsets,
+    int num_candidates,
+    int num_problems_in_batch,
+    int max_ops_per_problem_slot)
+{
+    // Każdy wątek może obsłużyć jednego kandydata.
+    // Alternatywnie, można użyć siatki 2D (candidate, problem_in_batch) dla lepszej paralelizacji,
+    // jeśli num_problems_in_batch jest duże. Dla prostoty, zaczynamy od 1D.
+    int candidate_idx = blockIdx.x * blockDim.x + threadIdx.x;
 
+    if (candidate_idx >= num_candidates) {
+        return;
+    }
+
+    for (int problem_idx = 0; problem_idx < num_problems_in_batch; ++problem_idx) {
+        // Oblicz offset w docelowym buforze d_target_ops_pool
+        int target_base_offset = (candidate_idx * num_problems_in_batch + problem_idx) * max_ops_per_problem_slot;
+        
+        // Pobierz offset i liczbę operacji dla bieżącego problemu ze źródła
+        int source_problem_ops_start_offset = d_source_ops_offsets[problem_idx];
+        int source_problem_ops_count = d_source_ops_offsets[problem_idx + 1] - source_problem_ops_start_offset;
+
+        // Kopiuj operacje
+        for (int i = 0; i < source_problem_ops_count; ++i) {
+            // Upewnij się, że nie piszemy poza przydzielonym slotem
+            // (chociaż source_problem_ops_count powinno być <= max_ops_per_problem_slot z definicji)
+            if (i < max_ops_per_problem_slot) {
+                d_target_ops_pool[target_base_offset + i] = d_source_batch_ops[source_problem_ops_start_offset + i];
+            }
+        }
+
+        // Opcjonalnie: Wyzeruj pozostałą część slotu, jeśli source_problem_ops_count < max_ops_per_problem_slot
+        // To może być potrzebne, jeśli dalszy kod kernela SolveManyWeightsKernel zakłada,
+        // że niewykorzystane operacje w slocie są wyzerowane.
+        // Jeśli nie jest to wymagane, można pominąć dla wydajności.
+        /*
+        for (int i = source_problem_ops_count; i < max_ops_per_problem_slot; ++i) {
+            // d_target_ops_pool[target_base_offset + i] = {}; // Wyzeruj strukturę GPUOperation
+            // lub specyficzne pola, np. d_target_ops_pool[target_base_offset + i].type = -1;
+        }
+        */
+    }
+}
 // Print problem details from device (for debugging)
 __device__ void PrintProblemDetails(const GPUProblem& problem) {
 	printf("\n=== Problem %d Details ===\n", blockIdx.x * blockDim.x + threadIdx.x);

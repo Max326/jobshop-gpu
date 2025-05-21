@@ -28,36 +28,41 @@ private:
     void FreeProblemDataGPU();
     void PrepareProblemDataGPU(const std::vector<JobShopData>& batch);
 
-    std::vector<JobShopData> cpu_problems_; // wszystkie problemy w RAM
+    std::vector<JobShopData> cpu_problems_;
     int num_problems_to_evaluate_ = 0;
     std::vector<int> nn_topology_;
     int nn_total_params_ = 0;
     int max_ops_per_problem_ = 0;
 
-    // GPU pointers
+    // GPU pointers for problem data
     GPUProblem* d_problems_ = nullptr;
     GPUJob* d_jobs_ = nullptr;
     GPUOperation* d_ops_ = nullptr; 
     int* d_eligible_ = nullptr;
     int* d_succ_ = nullptr;
     int* d_procTimes_ = nullptr;
+    int* d_template_ops_offsets_ = nullptr; // NOWE: Offsety dla d_ops_ (globalne w batchu)
 
-    BatchJobShopGPUData cpu_batch_data_; // aktualny batch
+    BatchJobShopGPUData cpu_batch_data_;
 
-    int nn_candidate_count_ = 0; // number of candidates
+    int nn_candidate_count_ = 0;
 
-    std::vector<NeuralNetwork> neural_networks_; // Store NeuralNetwork objects
-    std::vector<NeuralNetwork::DeviceEvaluator> host_evaluators_; // Evaluators on the host
-    NeuralNetwork::DeviceEvaluator* d_evaluators_ = nullptr; // Evaluators on the device
+    std::vector<NeuralNetwork> neural_networks_;
+    std::vector<NeuralNetwork::DeviceEvaluator> host_evaluators_;
+    NeuralNetwork::DeviceEvaluator* d_evaluators_ = nullptr;
 
+    // GPU Pointers for NN weights and biases
     float* d_all_candidate_weights_ = nullptr;
     float* d_all_candidate_biases_ = nullptr;
     float* h_pinned_all_weights_ = nullptr;
     float* h_pinned_all_biases_ = nullptr;
     size_t total_weights_size_ = 0;
     size_t total_biases_size_ = 0;
-    int nn_total_weights_per_network_ = 0; // Store total weights per network
-    int nn_total_biases_per_network_ = 0; // Store total biases per network
+    int nn_total_weights_per_network_ = 0;
+    int nn_total_biases_per_network_ = 0;
+
+    // NOWE: Prealokowany bufor na GPU dla kopii roboczych operacji
+    GPUOperation* d_ops_working_pool_ = nullptr; 
 };
 
 #endif // JOB_SHOP_GPU_EVALUATOR_CUH

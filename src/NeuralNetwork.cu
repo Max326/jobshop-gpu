@@ -256,7 +256,7 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float* features,
         int in_size = this->d_topology[layer - 1];
         int out_size = this->d_topology[layer];
         
-        float next_activations[101]; // Temporary buffer for next layer's activations
+        float next_activations[32]; // Temporary buffer for next layer's activations
 
         for(int neuron = 0; neuron < out_size; neuron++) {
             float sum = p_shared_biases[bias_idx_offset + neuron]; // Read from shared biases

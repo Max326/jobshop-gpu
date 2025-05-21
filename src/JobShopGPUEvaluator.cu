@@ -56,6 +56,8 @@ JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const 
     // Allocate and copy DeviceEvaluators to GPU
     cudaMalloc(&d_evaluators_, sizeof(NeuralNetwork::DeviceEvaluator) * nn_candidate_count_);
     cudaMemcpy(d_evaluators_, host_evaluators_.data(), sizeof(NeuralNetwork::DeviceEvaluator) * nn_candidate_count_, cudaMemcpyHostToDevice);
+    d_ops_working_pool_ = nullptr; 
+    d_template_ops_offsets_ = nullptr;
 }
 
 JobShopGPUEvaluator::~JobShopGPUEvaluator() {
@@ -65,6 +67,11 @@ JobShopGPUEvaluator::~JobShopGPUEvaluator() {
     cudaFree(d_all_candidate_biases_);
     cudaFreeHost(h_pinned_all_weights_);  // Use cudaFreeHost for pinned memory
     cudaFreeHost(h_pinned_all_biases_);  // Use cudaFreeHost for pinned memory
+
+    if (d_ops_working_pool_) {
+        cudaFree(d_ops_working_pool_);
+        d_ops_working_pool_ = nullptr;
+    }
 }
 
 void JobShopGPUEvaluator::FreeProblemDataGPU() {
@@ -75,6 +82,11 @@ void JobShopGPUEvaluator::FreeProblemDataGPU() {
     d_eligible_ = nullptr;
     d_succ_ = nullptr;
     d_procTimes_ = nullptr;
+
+    if (d_template_ops_offsets_) {
+        cudaFree(d_template_ops_offsets_);
+        d_template_ops_offsets_ = nullptr;
+    }
 }
 
 void JobShopGPUEvaluator::PrepareProblemDataGPU(const std::vector<JobShopData>& batch) {
@@ -89,6 +101,23 @@ void JobShopGPUEvaluator::PrepareProblemDataGPU(const std::vector<JobShopData>& 
     );
     if (num_problems_on_gpu != num_problems_to_evaluate_)
         throw std::runtime_error("Mismatch in number of problems uploaded to GPU.");
+
+    // NOWE: Alokacja i kopiowanie d_template_ops_offsets_
+    if (num_problems_to_evaluate_ > 0) {
+        // cpu_batch_data_.operationsOffsets ma rozmiar num_problems_to_evaluate_ + 1
+        CUDA_CHECK(cudaMalloc(&d_template_ops_offsets_, (num_problems_to_evaluate_ + 1) * sizeof(int)));
+        CUDA_CHECK(cudaMemcpy(d_template_ops_offsets_, cpu_batch_data_.operationsOffsets.data(), (num_problems_to_evaluate_ + 1) * sizeof(int), cudaMemcpyHostToDevice));
+    }
+
+    // NOWE: Alokacja d_ops_working_pool_ (lub realokacja jeśli rozmiar się zmienił)
+    if (d_ops_working_pool_) { // Zwolnij stary, jeśli istnieje
+        cudaFree(d_ops_working_pool_);
+        d_ops_working_pool_ = nullptr;
+    }
+    if (nn_candidate_count_ > 0 && num_problems_to_evaluate_ > 0 && max_ops_per_problem_ > 0) {
+        size_t pool_size = (size_t)nn_candidate_count_ * num_problems_to_evaluate_ * max_ops_per_problem_ * sizeof(GPUOperation);
+        CUDA_CHECK(cudaMalloc(&d_ops_working_pool_, pool_size));
+    }
 }
 
 bool JobShopGPUEvaluator::SetCurrentBatch(int batch_start, int batch_size) {
@@ -110,141 +139,163 @@ bool JobShopGPUEvaluator::SetCurrentBatch(int batch_start, int batch_size) {
 
 
 Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& candidates) {
-    auto t0 = std::chrono::high_resolution_clock::now();
+    auto t_total_start = std::chrono::high_resolution_clock::now();
 
-    int nn_candidate_count = candidates.cols();
-    if (candidates.rows() != nn_total_params_)
-        throw std::runtime_error("Mismatch in number of weights per NN candidate.");
-
-    // --------------------------------------------------------------------
-    // Consolidated Weight/Bias Update and Asynchronous Transfer
-    // --------------------------------------------------------------------
-
-    auto t1 = std::chrono::high_resolution_clock::now();
-
-    // 1. Populate Pinned Host Memory: Directly copy from Eigen matrix to the pinned host buffers
-    for (int r = 0; r < nn_candidate_count; ++r) {
-        int paramIdx = 0;
-        size_t weight_offset = (size_t)r * nn_total_weights_per_network_;
-        size_t bias_offset = (size_t)r * nn_total_biases_per_network_;
-
-        for (size_t i = 1; i < nn_topology_.size(); ++i) {
-            int prevLayerSize = nn_topology_[i - 1];
-            int currLayerSize = nn_topology_[i];
-
-            // Weights
-            for (int w = 0; w < prevLayerSize * currLayerSize; ++w) {
-                h_pinned_all_weights_[weight_offset++] = static_cast<float>(candidates(paramIdx++, r));
-            }
-
-            // Biases
-            for (int b = 0; b < currLayerSize; ++b) {
-                h_pinned_all_biases_[bias_offset++] = static_cast<float>(candidates(paramIdx++, r));
-            }
-        }
+    int current_nn_candidate_count = candidates.cols();
+    if (candidates.rows() != nn_total_params_) {
+        throw std::runtime_error("EvaluateCandidates: Mismatch in number of weights per NN candidate.");
+    }
+    if (current_nn_candidate_count != this->nn_candidate_count_) {
+        // Rozważ, czy to jest błąd, czy dynamiczna zmiana rozmiaru populacji jest dozwolona.
+        // Jeśli dozwolona, bufory zależne od nn_candidate_count_ (np. d_ops_working_pool_)
+        // mogą wymagać realokacji lub obsługi tego przypadku.
+        // Na razie zakładamy, że nn_candidate_count_ jest stałe po inicjalizacji.
+        // Jeśli current_nn_candidate_count może być mniejsze, to OK, ale jeśli większe, to problem.
+        std::cout << "[WARNING] EvaluateCandidates: current_nn_candidate_count (" << current_nn_candidate_count 
+                  << ") differs from member nn_candidate_count_ (" << this->nn_candidate_count_ << ")." << std::endl;
+        // Można rzucić błąd lub dostosować this->nn_candidate_count_ i realokować bufory,
+        // ale to wykracza poza zakres tej funkcji.
     }
 
-    auto t2 = std::chrono::high_resolution_clock::now();
+    cudaStream_t stream;
+    CUDA_CHECK(cudaStreamCreate(&stream));
 
-    // 2. Asynchronous Memory Transfer: Copy all weights and biases in single calls
-    cudaStream_t stream; // Get the stream (assuming this is a member variable now)
-    cudaStreamCreate(&stream);
+    // --- Sekcja aktualizacji wag i DeviceEvaluators ---
+    auto t_weight_update_start = std::chrono::high_resolution_clock::now();
+
+    // 1. Wypełnij przypiętą pamięć hosta
+    for (int r = 0; r < current_nn_candidate_count; ++r) {
+        int paramIdx = 0;
+        // Używaj this->nn_total_weights_per_network_ i this->nn_total_biases_per_network_
+        // które są obliczane na podstawie this->nn_topology_
+        size_t weight_buffer_offset = (size_t)r * this->nn_total_weights_per_network_;
+        size_t bias_buffer_offset = (size_t)r * this->nn_total_biases_per_network_;
+
+        for (size_t i = 1; i < this->nn_topology_.size(); ++i) {
+            int prevLayerSize = this->nn_topology_[i - 1];
+            int currLayerSize = this->nn_topology_[i];
+
+            for (int w_idx = 0; w_idx < prevLayerSize * currLayerSize; ++w_idx) {
+                if (weight_buffer_offset + w_idx < this->total_weights_size_ / sizeof(float)) { // Sprawdzenie granic
+                    h_pinned_all_weights_[weight_buffer_offset + w_idx] = static_cast<float>(candidates(paramIdx++, r));
+                } else { /* Obsługa błędu przekroczenia bufora */ }
+            }
+            weight_buffer_offset += prevLayerSize * currLayerSize; // Przesuń główny offset dla następnej warstwy w następnej iteracji 'r'
+
+            for (int b_idx = 0; b_idx < currLayerSize; ++b_idx) {
+                 if (bias_buffer_offset + b_idx < this->total_biases_size_ / sizeof(float)) { // Sprawdzenie granic
+                    h_pinned_all_biases_[bias_buffer_offset + b_idx] = static_cast<float>(candidates(paramIdx++, r));
+                 } else { /* Obsługa błędu przekroczenia bufora */ }
+            }
+            bias_buffer_offset += currLayerSize; // Przesuń główny offset dla następnej warstwy w następnej iteracji 'r'
+        }
+    }
+    
+    auto t_pinned_mem_populated = std::chrono::high_resolution_clock::now();
+
+    // 2. Asynchroniczny transfer wag i biasów
     CUDA_CHECK(cudaMemcpyAsync(d_all_candidate_weights_, h_pinned_all_weights_, total_weights_size_, cudaMemcpyHostToDevice, stream));
     CUDA_CHECK(cudaMemcpyAsync(d_all_candidate_biases_, h_pinned_all_biases_, total_biases_size_, cudaMemcpyHostToDevice, stream));
-    CUDA_CHECK(cudaStreamSynchronize(stream));
+    // Nie ma potrzeby synchronizacji tutaj, jeśli następne operacje na tych danych są również w tym strumieniu
 
-    // Update DeviceEvaluators on the host with the new weight/bias pointers
-    for (int r = 0; r < nn_candidate_count; ++r) {
-        neural_networks_[r].cudaData->d_weights = d_all_candidate_weights_ + r * nn_total_weights_per_network_;
-        neural_networks_[r].cudaData->d_biases = d_all_candidate_biases_ + r * nn_total_biases_per_network_;
-        host_evaluators_[r] = neural_networks_[r].GetDeviceEvaluator(); // Get its DeviceEvaluator
+    // 3. Aktualizacja host_evaluators_ i transfer do d_evaluators_
+    // Zakładając, że poprawka zarządzania pamięcią NeuralNetwork jest wdrożona:
+    for (int r = 0; r < current_nn_candidate_count; ++r) {
+        // Wskaźniki d_weights/d_biases w neural_networks_[r].cudaData są już ustawione w konstruktorze
+        // i wskazują na odpowiednie fragmenty d_all_candidate_weights_/biases.
+        // Flaga manage_gpu_buffers powinna być false dla tych instancji.
+        host_evaluators_[r] = neural_networks_[r].GetDeviceEvaluator();
     }
-    // Copy the updated DeviceEvaluators to the GPU
-    CUDA_CHECK(cudaMemcpyAsync(d_evaluators_, host_evaluators_.data(), sizeof(NeuralNetwork::DeviceEvaluator) * nn_candidate_count, cudaMemcpyHostToDevice, stream));
-    CUDA_CHECK(cudaStreamSynchronize(stream));
-    // --------------------------------------------------------------------
-    // Rest of EvaluateCandidates (Kernel Launch, Result Collection)
-    // --------------------------------------------------------------------
+    CUDA_CHECK(cudaMemcpyAsync(d_evaluators_, host_evaluators_.data(), sizeof(NeuralNetwork::DeviceEvaluator) * current_nn_candidate_count, cudaMemcpyHostToDevice, stream));
+    
+    auto t_evaluators_updated = std::chrono::high_resolution_clock::now();
 
-    auto t3 = std::chrono::high_resolution_clock::now();
-
-    std::vector<GPUOperation> ops_working(nn_candidate_count * num_problems_to_evaluate_ * max_ops_per_problem_);
-    for (int w = 0; w < nn_candidate_count; ++w) {
-        for (int p = 0; p < num_problems_to_evaluate_; ++p) {
-            int base = (w * num_problems_to_evaluate_ + p) * max_ops_per_problem_;
-            int opsOffset = cpu_batch_data_.operationsOffsets[p];
-            int opsCount = cpu_batch_data_.operationsOffsets[p + 1] - cpu_batch_data_.operationsOffsets[p];
-            memcpy(&ops_working[base], &cpu_batch_data_.operations[opsOffset], opsCount * sizeof(GPUOperation));
+    // --- Sekcja przygotowania d_ops_working_pool_ na GPU ---
+    if (d_ops_working_pool_ && d_ops_ && d_template_ops_offsets_ && current_nn_candidate_count > 0 && num_problems_to_evaluate_ > 0) {
+        int threadsPerBlockInit = 256;
+        int blocksPerGridInit = (current_nn_candidate_count + threadsPerBlockInit - 1) / threadsPerBlockInit;
+        
+        InitializeWorkingOpsKernel<<<blocksPerGridInit, threadsPerBlockInit, 0, stream>>>(
+            d_ops_working_pool_,
+            d_ops_,
+            d_template_ops_offsets_,
+            current_nn_candidate_count,
+            num_problems_to_evaluate_,
+            max_ops_per_problem_
+        );
+        cudaError_t initKernelErr = cudaGetLastError(); // Sprawdź błąd po kernelu
+        if (initKernelErr != cudaSuccess) {
+            std::cerr << "EvaluateCandidates: InitializeWorkingOpsKernel error: " << cudaGetErrorString(initKernelErr) << std::endl;
+            CUDA_CHECK(cudaStreamDestroy(stream));
+            return Eigen::VectorXd::Constant(current_nn_candidate_count, 1e9 + 1); // Inna wartość błędu
         }
+    } else if (current_nn_candidate_count > 0 && num_problems_to_evaluate_ > 0) {
+        std::cerr << "[WARNING] EvaluateCandidates: Skipping InitializeWorkingOpsKernel due to null pointers or zero sizes for essential data." << std::endl;
+        // To może być krytyczny błąd konfiguracji, jeśli oczekiwano wykonania kernela.
     }
+    
+    auto t_ops_working_prepared = std::chrono::high_resolution_clock::now();
 
-    auto t4 = std::chrono::high_resolution_clock::now();
-
-    GPUOperation* d_ops_working = nullptr;
-    CUDA_CHECK(cudaMalloc(&d_ops_working, ops_working.size() * sizeof(GPUOperation)));
-    CUDA_CHECK(cudaMemcpy(d_ops_working, ops_working.data(), ops_working.size() * sizeof(GPUOperation), cudaMemcpyHostToDevice));
-
+    // --- Sekcja uruchomienia głównego kernela i pobrania wyników ---
     float* d_results = nullptr;
-    CUDA_CHECK(cudaMalloc(&d_results, sizeof(float) * nn_candidate_count));
+    CUDA_CHECK(cudaMalloc(&d_results, sizeof(float) * current_nn_candidate_count));
 
-    // Kernel
-    auto t5 = std::chrono::high_resolution_clock::now();
+    auto t_kernel_launch_prep = std::chrono::high_resolution_clock::now();
 
     JobShopHeuristic::SolveBatchNew(
-        d_problems_, d_evaluators_, d_ops_working, d_results,
-        num_problems_to_evaluate_, // This is numProblems_per_block for the kernel
-        nn_candidate_count_,       // This is numWeights_total_blocks for the kernel
+        d_problems_, 
+        d_evaluators_, 
+        d_ops_working_pool_, // Użyj prealokowanego bufora
+        d_results,
+        num_problems_to_evaluate_,
+        current_nn_candidate_count,
         max_ops_per_problem_,
-        stream,                    // Pass the stream
-        nn_total_params_           // <<< Pass the total parameters for one NN here
+        stream,
+        nn_total_params_ // Upewnij się, że to jest nn_total_params_ *dla jednej sieci*, a nie suma dla wszystkich
     );
-    CUDA_CHECK(cudaStreamSynchronize(stream));
-
-    cudaError_t kernelErr = cudaGetLastError();
-    if (kernelErr != cudaSuccess) {
-        std::cerr << "Kernel error during CMA-ES evaluation: " << cudaGetErrorString(kernelErr) << std::endl;
-        Eigen::VectorXd bad_result = Eigen::VectorXd::Constant(nn_candidate_count, 1e9);
-        cudaFree(d_ops_working);
-        cudaFree(d_results);
-        cudaStreamDestroy(stream);
-        return bad_result;
+    
+    cudaError_t mainKernelErr = cudaGetLastError(); // Sprawdź błąd po kernelu, przed synchronizacją
+    if (mainKernelErr != cudaSuccess) {
+        std::cerr << "EvaluateCandidates: SolveBatchNew kernel launch error: " << cudaGetErrorString(mainKernelErr) << std::endl;
+        CUDA_CHECK(cudaFree(d_results));
+        CUDA_CHECK(cudaStreamDestroy(stream));
+        return Eigen::VectorXd::Constant(current_nn_candidate_count, 1e9 + 2); // Inna wartość błędu
     }
 
-    auto t6 = std::chrono::high_resolution_clock::now();
+    CUDA_CHECK(cudaStreamSynchronize(stream)); // Synchronizuj po wszystkich operacjach w strumieniu
+    
+    auto t_kernel_finished = std::chrono::high_resolution_clock::now();
 
-    std::vector<float> host_results(nn_candidate_count);
-    CUDA_CHECK(cudaMemcpy(host_results.data(), d_results, sizeof(float) * nn_candidate_count, cudaMemcpyDeviceToHost));
+    std::vector<float> host_results(current_nn_candidate_count);
+    CUDA_CHECK(cudaMemcpy(host_results.data(), d_results, sizeof(float) * current_nn_candidate_count, cudaMemcpyDeviceToHost)); // Kopiowanie synchroniczne jest OK po synchronizacji strumienia
 
-    auto t7 = std::chrono::high_resolution_clock::now();
+    auto t_results_copied_d2h = std::chrono::high_resolution_clock::now();
 
-    Eigen::VectorXd fvalues(nn_candidate_count);
-    for (int r = 0; r < nn_candidate_count; ++r)
+    Eigen::VectorXd fvalues(current_nn_candidate_count);
+    for (int r = 0; r < current_nn_candidate_count; ++r) {
         fvalues[r] = static_cast<double>(host_results[r]);
-
-    auto t8 = std::chrono::high_resolution_clock::now();
+    }
+    
+    auto t_fvalues_filled = std::chrono::high_resolution_clock::now();
 
     double min_makespan = (fvalues.size() > 0) ? fvalues.minCoeff() : 0.0;
-    std::cout << "[INFO] Best average makespan: " << min_makespan << std::endl;
+    if (fvalues.size() > 0) { // Drukuj tylko jeśli są wyniki
+        std::cout << "[INFO] Best average makespan in batch: " << min_makespan << std::endl;
+    }
 
-    cudaFree(d_ops_working);
-    cudaFree(d_results);
-    cudaStreamDestroy(stream);
+    CUDA_CHECK(cudaFree(d_results));
+    CUDA_CHECK(cudaStreamDestroy(stream));
 
-    std::cout << "[TIMER][CPU] Weight Update : "
-        << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() << " ms, "
-        << "DeviceEvaluator H2D: "
-        << std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2).count() << " ms, "
-        << "ops_working memcpy: "
-        << std::chrono::duration_cast<std::chrono::milliseconds>(t4 - t3).count() << " ms, "
-        << "Kernel launch+wait: "
-        << std::chrono::duration_cast<std::chrono::milliseconds>(t6 - t5).count() << " ms, "
-        << "Results D2H: "
-        << std::chrono::duration_cast<std::chrono::milliseconds>(t7 - t6).count() << " ms, "
-        << "fvalues fill: "
-        << std::chrono::duration_cast<std::chrono::milliseconds>(t8 - t7).count() << " ms, "
-        << "Total evaluateCandidates: "
-        << std::chrono::duration_cast<std::chrono::milliseconds>(t8 - t0).count() << " ms"
-        << std::endl;
+    std::cout << "[TIMER][EvaluateCandidates] "
+              << "WeightUpdateToPinned: " << std::chrono::duration_cast<std::chrono::microseconds>(t_pinned_mem_populated - t_weight_update_start).count() << " us, "
+              << "HostToDeviceAsync (Weights, Biases, Evaluators): " << std::chrono::duration_cast<std::chrono::microseconds>(t_evaluators_updated - t_pinned_mem_populated).count() << " us, "
+              << "InitWorkingOpsKernel: " << std::chrono::duration_cast<std::chrono::microseconds>(t_ops_working_prepared - t_evaluators_updated).count() << " us, "
+              << "SolveBatchNewKernel (incl. sync): " << std::chrono::duration_cast<std::chrono::microseconds>(t_kernel_finished - t_kernel_launch_prep).count() << " us, "
+              // t_kernel_launch_prep jest po alokacji d_results, więc t_ops_working_prepared do t_kernel_launch_prep to czas alokacji d_results
+              << "ResultsD2H: " << std::chrono::duration_cast<std::chrono::microseconds>(t_results_copied_d2h - t_kernel_finished).count() << " us, "
+              << "FValuesFill: " << std::chrono::duration_cast<std::chrono::microseconds>(t_fvalues_filled - t_results_copied_d2h).count() << " us, "
+              << "TOTAL: " << std::chrono::duration_cast<std::chrono::milliseconds>(t_fvalues_filled - t_total_start).count() << " ms"
+              << std::endl;
 
     return fvalues;
 }

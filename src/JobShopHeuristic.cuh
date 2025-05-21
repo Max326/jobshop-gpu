@@ -110,6 +110,14 @@ __global__ void SolveManyWeightsKernel(
     int numProblemsToSolvePerBlock,
     int maxOpsPerProblem
 );
+__global__ void InitializeWorkingOpsKernel(
+    GPUOperation* d_target_ops_pool,      // Docelowy, duży bufor na GPU (d_ops_working_pool_)
+    const GPUOperation* d_source_batch_ops, // Źródłowe operacje dla aktualnego batcha (d_ops_)
+    const int* d_source_ops_offsets,      // Offsety do d_source_batch_ops (d_template_ops_offsets_)
+    int num_candidates,                   // Liczba kandydatów (nn_candidate_count_)
+    int num_problems_in_batch,            // Liczba problemów w batchu (num_problems_to_evaluate_)
+    int max_ops_per_problem_slot          // Rozmiar slotu na operacje dla jednego problemu (max_ops_per_problem_)
+);
 
 __device__ void PrintProblemDetails(const GPUProblem& problem);
 
