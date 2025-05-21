@@ -4,6 +4,8 @@ project(JobShopScheduler LANGUAGES CXX CUDA)  # Changed order
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CXX_STANDARD 17)
 
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+
 # Better CUDA flags for modern architectures
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --fmad=false --prec-div=true --prec-sqrt=true -lineinfo")
 
