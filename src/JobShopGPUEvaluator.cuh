@@ -21,6 +21,8 @@ public:
     // Ewaluacja populacji wag na aktualnym batchu problemów
     Eigen::VectorXd EvaluateCandidates(const Eigen::MatrixXd& candidates);
 
+    
+
     int GetTotalNNParams() const { return nn_total_params_; }
     int GetTotalProblems() const { return cpu_problems_.size(); }
 
@@ -47,8 +49,9 @@ private:
     int nn_candidate_count_ = 0; // number of candidates
 
     std::vector<NeuralNetwork> neural_networks_; // Store NeuralNetwork objects
-    std::vector<NeuralNetwork::DeviceEvaluator> host_evaluators_; // Evaluators on the host
     NeuralNetwork::DeviceEvaluator* d_evaluators_ = nullptr; // Evaluators on the device
+    GPUOperation* d_ops_working_ = nullptr;      // Writable operations buffer for all (NN, problem) pairs
+    size_t current_d_ops_working_size_ = 0; // To track current allocated size
 
     float* d_all_candidate_weights_ = nullptr;
     float* d_all_candidate_biases_ = nullptr;
@@ -59,5 +62,14 @@ private:
     int nn_total_weights_per_network_ = 0; // Store total weights per network
     int nn_total_biases_per_network_ = 0; // Store total biases per network
 };
+
+__global__ void UpdateEvaluatorPointersKernel(
+    NeuralNetwork::DeviceEvaluator* d_evaluators,
+    float* d_all_weights,
+    float* d_all_biases,
+    int nn_total_weights_per_network, // Stride for weights array
+    int nn_total_biases_per_network,  // Stride for biases array
+    int nn_candidate_count);
+
 
 #endif // JOB_SHOP_GPU_EVALUATOR_CUH
