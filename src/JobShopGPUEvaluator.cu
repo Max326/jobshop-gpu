@@ -26,9 +26,15 @@ JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const 
 
     nn_total_params_ = NeuralNetwork::CalculateTotalParameters(nn_topology_);
 
-    // Initialize DeviceEvaluator pool:
-    // nn_candidate_count_ = population_size; // number of candidates, use the value you are using in the CMAES
-    neural_networks_.resize(nn_candidate_count_);
+    // Allocate and upload shared topology array
+    if (!nn_topology_.empty()) {
+        size_t topology_size_bytes = nn_topology_.size() * sizeof(int);
+        CUDA_CHECK(cudaMalloc(&d_shared_topology_array_, topology_size_bytes));
+        CUDA_CHECK(cudaMemcpy(d_shared_topology_array_, nn_topology_.data(), topology_size_bytes, cudaMemcpyHostToDevice));
+    } else {
+        // Handle empty topology case if necessary, or ensure nn_topology_ is never empty
+        d_shared_topology_array_ = nullptr;
+    }
 
     nn_total_weights_per_network_ = 0;
     nn_total_biases_per_network_ = 0;
@@ -52,22 +58,18 @@ JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const 
     std::vector<NeuralNetwork::DeviceEvaluator> temp_host_evaluators(nn_candidate_count_);
 
     for (int r = 0; r < nn_candidate_count_; ++r) {
-        neural_networks_[r] = NeuralNetwork(nn_topology_); 
-        // Point the CudaData within each NeuralNetwork object to the correct slice 
-        // of the large pre-allocated GPU buffers for weights and biases.
-        // This setup is for the NeuralNetwork objects themselves, if they were to individually manage InitializeCudaData.
-        // However, GetDeviceEvaluator() will fetch these d_weights/d_biases pointers.
-        // Ensure the d_weights/d_biases in CudaData are correctly set if GetDeviceEvaluator relies on them being pre-set
-        // to point into the large d_all_candidate_weights/biases buffers.
-        // The current neural_networks_[r].cudaData->d_weights assignment looks like it tries to do this.
-        // Let's assume GetDeviceEvaluator can use these directly.
-        if (!neural_networks_[r].cudaData) { // Ensure cudaData is initialized
-             neural_networks_[r].cudaData = std::make_unique<NeuralNetwork::CudaData>();
+        temp_host_evaluators[r].weights = d_all_candidate_weights_ + (size_t)r * nn_total_weights_per_network_;
+        temp_host_evaluators[r].biases  = d_all_candidate_biases_  + (size_t)r * nn_total_biases_per_network_;
+
+        if (nn_topology_.size() > MAX_NN_LAYERS) { // MAX_NN_LAYERS is defined in NeuralNetwork.cuh
+            throw std::runtime_error("JobShopGPUEvaluator: Network topology exceeds MAX_NN_LAYERS.");
         }
-        neural_networks_[r].cudaData->d_weights = d_all_candidate_weights_ + (size_t)r * nn_total_weights_per_network_;
-        neural_networks_[r].cudaData->d_biases  = d_all_candidate_biases_  + (size_t)r * nn_total_biases_per_network_;
+        for (size_t i = 0; i < nn_topology_.size(); ++i) {
+            temp_host_evaluators[r].d_topology[i] = nn_topology_[i];
+        }
         
-        temp_host_evaluators[r] = neural_networks_[r].GetDeviceEvaluator(); 
+        temp_host_evaluators[r].num_layers = nn_topology_.size();
+        temp_host_evaluators[r].max_layer_size = NeuralNetwork::maxLayerSize; // Access static const member
     }
 
     // Allocate and copy DeviceEvaluators to GPU ONCE
@@ -86,6 +88,11 @@ JobShopGPUEvaluator::~JobShopGPUEvaluator() {
     if (d_ops_working_ != nullptr) {
         CUDA_CHECK(cudaFree(d_ops_working_));
         d_ops_working_ = nullptr;
+    }
+
+    if (d_shared_topology_array_ != nullptr) {
+        CUDA_CHECK(cudaFree(d_shared_topology_array_));
+        d_shared_topology_array_ = nullptr;
     }
 }
 

@@ -125,9 +125,8 @@ public:
 
 	const int* GetTopology() const { return topology.data(); }
 	int GetNumLayers() const { return topology.size(); }
-
-private:
 	static const int maxLayerSize = 86;
+
 
 private:
 	void InitializeCudaData();

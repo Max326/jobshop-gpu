@@ -48,10 +48,12 @@ private:
 
     int nn_candidate_count_ = 0; // number of candidates
 
-    std::vector<NeuralNetwork> neural_networks_; // Store NeuralNetwork objects
+    int* d_shared_topology_array_ = nullptr;
+    
     NeuralNetwork::DeviceEvaluator* d_evaluators_ = nullptr; // Evaluators on the device
     GPUOperation* d_ops_working_ = nullptr;      // Writable operations buffer for all (NN, problem) pairs
     size_t current_d_ops_working_size_ = 0; // To track current allocated size
+
 
     float* d_all_candidate_weights_ = nullptr;
     float* d_all_candidate_biases_ = nullptr;
