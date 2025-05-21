@@ -65,7 +65,7 @@ FetchContent_Declare(
     GIT_TAG v3.11.2
 )
 FetchContent_MakeAvailable(json)
-target_link_libraries(JobShopScheduler PRIVATE nlohmann_json::nlohmann_json cmaes)
+target_link_libraries(JobShopScheduler PRIVATE nlohmann_json::nlohmann_json libcmaes.a)
 
 # Data files
 file(COPY ${CMAKE_SOURCE_DIR}/data DESTINATION ${CMAKE_BINARY_DIR})

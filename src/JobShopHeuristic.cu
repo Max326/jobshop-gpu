@@ -292,7 +292,7 @@ __global__ void SolveManyWeightsKernel(
 		int jobScheduledOps[MAX_JOBS] = {0};
 		int machine_times[MAX_MACHINES] = {0};
 
-		int jobTypeCount[MAX_OP_TYPES] = {0};
+		int jobTypeCount[MAX_JOB_TYPES] = {0};
 		int opTypeCount[MAX_OP_TYPES] = {0};
 		int opTypePerJobCount[MAX_JOBS][MAX_OP_TYPES] = {0};
 
