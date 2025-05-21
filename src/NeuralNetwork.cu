@@ -142,7 +142,7 @@ __device__ float ScaleTanh2(float x) {
 		float tmp = (x + shift) * rshift;
 		return -1.0f + tmp * tmp * tmp * tmp;
 	} else {
-		return -1.0f - (shift - x) * 0.01;
+		return -1.0f + (shift + x) * 0.01;
 	}
 }
 
@@ -150,10 +150,10 @@ __device__ float ScaleTanh2(float x) {
 __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float* features, const float* p_shared_weights, const float* p_shared_biases) const {
     // Use this->max_layer_size which is now set correctly
 
-    if (this->max_layer_size <= 0 || this->max_layer_size > 101 /*Match static const*/) { // Basic sanity check
+    if (this->max_layer_size <= 0 || this->max_layer_size > 86 /*Match static const*/) { // Basic sanity check
         return 0.0f; // Or handle error differently if critical path allows
     }
-    // Using 101 directly as per existing code's use of NeuralNetwork::maxLayerSize
+    // Using 86 directly as per existing code's use of NeuralNetwork::maxLayerSize
     float activations[maxLayerSize]; // Max size for activations array on stack
 
 	if(threadIdx.x == 0 && blockIdx.x == 0) {
