@@ -352,6 +352,35 @@ __global__ void SolveManyWeightsKernel(
 						features[1 + MAX_MACHINES + machineID] = 1.0f;			 // one hot machine encoding
 						features[1 + 2 * MAX_MACHINES + operation.type] = 1.0f;	 // one hot operation type encoding
 
+						//* total number of operations left (of each type) - start
+                        int totOpLeftStart = 1 + 2* MAX_MACHINES + MAX_OP_TYPES;
+                        for (int i = totOpLeftStart; i < totOpLeftStart + MAX_OP_TYPES; i++){
+                            features[i] = static_cast<float>(opTypeCount[i-totOpLeftStart]);
+                        }
+                        --features[totOpLeftStart + operation.type]; // because we score for the operation as if it was processed
+                        //* total number of operations left (of each type) - end
+
+                        //* job's operations left (of each type) - start
+                        int jobOpLeftStart = 1 + 2* MAX_MACHINES + 2 * MAX_OP_TYPES;
+                        for (int i = jobOpLeftStart; i < jobOpLeftStart + MAX_OP_TYPES; i++){
+                            features[i] = static_cast<float>(opTypePerJobCount[jobID][i-jobOpLeftStart]);
+                        }
+                        --features[jobOpLeftStart + operation.type]; // because we score for the operation as if it was processed
+                        //* job's operations left (of each type) - end
+
+                        //* one hot job type encoding - start
+                        int jobTypeStart = 1 + 2* MAX_MACHINES + 3 * MAX_OP_TYPES;
+                        features[jobTypeStart + job.type] = 1.0f; // one hot job type encoding
+                        //* one hot job type encoding - end
+
+                        //* total number of jobs left (of each type) - start
+                        int jobTypeCountStart = 1 + 2* MAX_MACHINES + 3 * MAX_OP_TYPES + MAX_JOB_TYPES;
+                        for (int i = jobTypeCountStart; i < jobTypeCountStart + MAX_JOB_TYPES; i++){
+                            features[i] = static_cast<float>(jobTypeCount[i-jobTypeCountStart]);
+                        }
+                        --features[jobTypeCountStart + job.type]; // because we score for the operation as if it was processed
+                        //* total number of jobs left (of each type) - end
+
 						const float SCALE_FACTOR = 100.0f;
 						const float inv_SCALE_FACTOR = 1.0 / SCALE_FACTOR;
 						// normalize nn inputs (it may like it better)
