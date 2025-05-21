@@ -120,7 +120,7 @@ bool LoadMatrixFromJson(Eigen::MatrixXd& matrix, const std::string& filename) {
 }
 
 int main(int argc, char *argv[]) {
-    const std::vector<int> topology = {101, 32, 16, 1};
+    const std::vector<int> topology = {86, 32, 16, 1};
     const int batch_size = 50;
     const std::string problem_file = "test_10k.json"; // This seems to be an input file, ensure its path is correct
     const int population_size = 192;

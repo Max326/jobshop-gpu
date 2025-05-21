@@ -340,7 +340,7 @@ __global__ void SolveManyWeightsKernel(
 														  jobID, operationID, machineID, start_time, pTime);
 												}
 						 */
-						float features[1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + 2 * MAX_JOB_TYPES] = {0.0f};
+						float features[1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + MAX_JOB_TYPES] = {0.0f}; // TODO feature number
 
 						features[0] = static_cast<float>(start_time) - machine_times[machineID];  // wasted time
 
@@ -355,17 +355,17 @@ __global__ void SolveManyWeightsKernel(
 						//* total number of operations left (of each type) - start
                         int totOpLeftStart = 1 + 2* MAX_MACHINES + MAX_OP_TYPES;
                         for (int i = totOpLeftStart; i < totOpLeftStart + MAX_OP_TYPES; i++){
-                            features[i] = static_cast<float>(opTypeCount[i-totOpLeftStart]);
+                            features[i] = static_cast<float>(opTypeCount[i-totOpLeftStart]); // TODO scale
                         }
-                        --features[totOpLeftStart + operation.type]; // because we score for the operation as if it was processed
+                        --features[totOpLeftStart + operation.type]; // because we score for the operation as if it was processed // TODO scale
                         //* total number of operations left (of each type) - end
 
                         //* job's operations left (of each type) - start
                         int jobOpLeftStart = 1 + 2* MAX_MACHINES + 2 * MAX_OP_TYPES;
                         for (int i = jobOpLeftStart; i < jobOpLeftStart + MAX_OP_TYPES; i++){
-                            features[i] = static_cast<float>(opTypePerJobCount[jobID][i-jobOpLeftStart]);
+                            features[i] = static_cast<float>(opTypePerJobCount[jobID][i-jobOpLeftStart]); // TODO scale
                         }
-                        --features[jobOpLeftStart + operation.type]; // because we score for the operation as if it was processed
+                        --features[jobOpLeftStart + operation.type]; // because we score for the operation as if it was processed // TODO scale
                         //* job's operations left (of each type) - end
 
                         //* one hot job type encoding - start
@@ -373,16 +373,18 @@ __global__ void SolveManyWeightsKernel(
                         features[jobTypeStart + job.type] = 1.0f; // one hot job type encoding
                         //* one hot job type encoding - end
 
+						// TODO? operations left for job types (of each type)
+
                         //* total number of jobs left (of each type) - start
-                        int jobTypeCountStart = 1 + 2* MAX_MACHINES + 3 * MAX_OP_TYPES + MAX_JOB_TYPES;
-                        for (int i = jobTypeCountStart; i < jobTypeCountStart + MAX_JOB_TYPES; i++){
-                            features[i] = static_cast<float>(jobTypeCount[i-jobTypeCountStart]);
-                        }
-                        --features[jobTypeCountStart + job.type]; // because we score for the operation as if it was processed
+                        // int jobTypeCountStart = 1 + 2* MAX_MACHINES + 3 * MAX_OP_TYPES + MAX_JOB_TYPES;
+                        // for (int i = jobTypeCountStart; i < jobTypeCountStart + MAX_JOB_TYPES; i++){
+                        //     features[i] = static_cast<float>(jobTypeCount[i-jobTypeCountStart]);
+                        // }
+                        // --features[jobTypeCountStart + job.type]; // because we score for the operation as if it was processed
                         //* total number of jobs left (of each type) - end
 
-						const float SCALE_FACTOR = 100.0f;
-						const float inv_SCALE_FACTOR = 1.0 / SCALE_FACTOR;
+						const float SCALE_FACTOR = 100.0f; // TODO TANH SCALING
+						const float inv_SCALE_FACTOR = 1.0f / SCALE_FACTOR;
 						// normalize nn inputs (it may like it better)
 						features[0] *= inv_SCALE_FACTOR;
 						for(int i = 1; i < MAX_MACHINES + 1; ++i) {
