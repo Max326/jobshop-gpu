@@ -13,14 +13,6 @@ void NeuralNetwork::InitializeCudaData() {
 	// 1. Calculate offsets for each layer's weights and biases
 	FlattenParams();
 
-	/* std::cout << "\nFlattened weights size: " << flattenedWeights.size() << "\n";
-	std::cout << "Flattened biases size: " << flattenedBiases.size() << "\n"; */
-
-
-	/* std::cout << "First few weights: ";
-	for(int i = 0; i < std::min(5, (int)flattenedWeights.size()); i++)
-	 	std::cout << flattenedWeights[i] << " ";
-	    std::cout << "\n"; */
 
 	layerOffsets.resize(weights.size());
 	biasOffsets.resize(biases.size());
@@ -88,12 +80,12 @@ NeuralNetwork::NeuralNetwork(const std::vector<int> &topology,
 	//  Validation checks
 	// ======================
 
-	if(weights_ptr == nullptr) {
+/* 	if(weights_ptr == nullptr) {
 		GenerateWeights();
 	}
 	if(biases_ptr == nullptr) {
 		GenerateBiases();
-	}
+	} */
 
 	// 1. Validate topology
 /* 	if(topology.empty()) {
@@ -205,7 +197,6 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float *features)
     float final_output = (this->d_topology[this->num_layers - 1] == 1) ? 
                         activations[0] : 0.0f;
 
-    // Print final output only for first thread and if it's non-zero
     
     return final_output;
 }

@@ -117,12 +117,12 @@ public:
 	};
 
 	__host__ DeviceEvaluator GetDeviceEvaluator() const {
-		if(!cudaData || !cudaData->d_weights || !cudaData->d_biases) {
+/* 		if(!cudaData || !cudaData->d_weights || !cudaData->d_biases) {
 			throw std::runtime_error("CUDA data not initialized for GetDeviceEvaluator");
 		}
 		if(topology.size() > MAX_NN_LAYERS) {
 			throw std::runtime_error("Network topology exceeds MAX_NN_LAYERS defined in DeviceEvaluator.");
-		}
+		} */
 	
 		DeviceEvaluator eval;
 		eval.d_weights = cudaData->d_weights;
