@@ -342,35 +342,43 @@ __global__ void SolveManyWeightsKernel(
 						 */
 						float features[1 + 2 * MAX_MACHINES + 3 * MAX_OP_TYPES + MAX_JOB_TYPES] = {0.0f}; // TODO feature number
 
-						features[0] = static_cast<float>(start_time) - machine_times[machineID];  // wasted time
+						int startIndex = 0;
 
-						for(int i = 1; i < MAX_MACHINES + 1; ++i) {
-							features[i] = static_cast<float>(current_local_makespan - machine_times[i - 1]);  // envelope
+						features[startIndex++] = ScaleTanh2(static_cast<float>(start_time) - machine_times[machineID]);  // wasted time
+
+						for(int i = 0; i < MAX_MACHINES; ++i) {
+							features[startIndex + i] = ScaleTanh2(static_cast<float>(current_local_makespan - machine_times[i]));  // envelope
 						}
-						features[1 + machineID] = static_cast<float>(current_local_makespan - (start_time + pTime));  // envelope for current machine
+						features[startIndex + machineID] = ScaleTanh2(static_cast<float>(current_local_makespan - (start_time + pTime)));  // envelope for current machine
+						
+						startIndex += MAX_MACHINES;
 
-						features[1 + MAX_MACHINES + machineID] = 1.0f;			 // one hot machine encoding
-						features[1 + 2 * MAX_MACHINES + operation.type] = 1.0f;	 // one hot operation type encoding
+						features[startIndex + machineID] = 1.0f;			 // one hot machine encoding
+						startIndex += MAX_MACHINES;
+
+						features[startIndex + operation.type] = 1.0f;	 // one hot operation type encoding
+						startIndex += MAX_OP_TYPES;
 
 						//* total number of operations left (of each type) - start
-                        int totOpLeftStart = 1 + 2* MAX_MACHINES + MAX_OP_TYPES;
-                        for (int i = totOpLeftStart; i < totOpLeftStart + MAX_OP_TYPES; i++){
-                            features[i] = static_cast<float>(opTypeCount[i-totOpLeftStart]); // TODO scale
+                        for (int i = 0; i < MAX_OP_TYPES; i++){
+                            features[startIndex + i] = ScaleTanh2(static_cast<float>(opTypeCount[i]));
                         }
-                        --features[totOpLeftStart + operation.type]; // because we score for the operation as if it was processed // TODO scale
+						features[startIndex + operation.type] = ScaleTanh2(static_cast<float>(opTypeCount[operation.type] - 1));
+						// --features[totOpLeftStart + operation.type]; // because we score for the operation as if it was processed // TODO scale
                         //* total number of operations left (of each type) - end
 
                         //* job's operations left (of each type) - start
-                        int jobOpLeftStart = 1 + 2* MAX_MACHINES + 2 * MAX_OP_TYPES;
-                        for (int i = jobOpLeftStart; i < jobOpLeftStart + MAX_OP_TYPES; i++){
-                            features[i] = static_cast<float>(opTypePerJobCount[jobID][i-jobOpLeftStart]); // TODO scale
+                        startIndex += MAX_OP_TYPES;
+                        for (int i = 0; i < MAX_OP_TYPES; i++){
+                            features[startIndex + i] = ScaleTanh2(static_cast<float>(opTypePerJobCount[jobID][i]));
                         }
-                        --features[jobOpLeftStart + operation.type]; // because we score for the operation as if it was processed // TODO scale
+						features[startIndex + operation.type] = ScaleTanh2(static_cast<float>(opTypePerJobCount[jobID][operation.type] - 1));
+                        // --features[jobOpLeftStart + operation.type]; // because we score for the operation as if it was processed // TODO scale
                         //* job's operations left (of each type) - end
 
                         //* one hot job type encoding - start
-                        int jobTypeStart = 1 + 2* MAX_MACHINES + 3 * MAX_OP_TYPES;
-                        features[jobTypeStart + job.type] = 1.0f; // one hot job type encoding
+                        startIndex += MAX_OP_TYPES;
+                        features[startIndex + job.type] = 1.0f; // one hot job type encoding
                         //* one hot job type encoding - end
 
 						// TODO? operations left for job types (of each type)
@@ -383,14 +391,6 @@ __global__ void SolveManyWeightsKernel(
                         // --features[jobTypeCountStart + job.type]; // because we score for the operation as if it was processed
                         //* total number of jobs left (of each type) - end
 
-						const float SCALE_FACTOR = 100.0f; // TODO TANH SCALING
-						const float inv_SCALE_FACTOR = 1.0f / SCALE_FACTOR;
-						// normalize nn inputs (it may like it better)
-						features[0] *= inv_SCALE_FACTOR;
-						for(int i = 1; i < MAX_MACHINES + 1; ++i) {
-							features[i] *= inv_SCALE_FACTOR;
-						}
-						features[1 + machineID] *= inv_SCALE_FACTOR;
 
 						float score = nn_eval_global_ptr.Evaluate(features, sm_weights, sm_biases);
 						// float score2 = nn_eval_global_ptr.Evaluate(features); // For debug
