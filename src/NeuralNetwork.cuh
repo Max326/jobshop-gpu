@@ -25,7 +25,7 @@
 #define MAX_NN_LAYERS 4
 
 extern __device__ __managed__ int gpu_error_flag;
-__device__ float ScaleTanh2(float x);
+__noinline__ __device__ float ScaleTanh2(float x);
 
 class NeuralNetwork
 {

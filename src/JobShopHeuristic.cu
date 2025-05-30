@@ -285,16 +285,16 @@ __global__ void SolveManyWeightsKernel(
 		const GPUProblem problem = problems[problemIdxInBlock];	 // Assuming 'problems' array is correctly indexed for the batch
 
 		// local_ops indexing seems correct from your previous structure
-		int base_op_idx = (weightSet * numProblemsToSolvePerBlock + problemIdxInBlock) * maxOpsPerProblem;
+		const int base_op_idx = (weightSet * numProblemsToSolvePerBlock + problemIdxInBlock) * maxOpsPerProblem;
 		GPUOperation* local_ops = &ops_working[base_op_idx];
 
 		// ... (rest of your existing problem setup: jobScheduledOps, machine_times, etc. from JobShopHeuristic.cu[6]) ...
-		int jobScheduledOps[MAX_JOBS] = {0};
-		int machine_times[MAX_MACHINES] = {0};
+		unsigned short int jobScheduledOps[MAX_JOBS] = {0};
+		unsigned short int machine_times[MAX_MACHINES] = {0};
 
-		int jobTypeCount[MAX_JOB_TYPES] = {0};
-		int opTypeCount[MAX_OP_TYPES] = {0};
-		int opTypePerJobCount[MAX_JOBS][MAX_OP_TYPES] = {0};
+		unsigned short int jobTypeCount[MAX_JOB_TYPES] = {0};
+		unsigned short int opTypeCount[MAX_OP_TYPES] = {0};
+		unsigned short int opTypePerJobCount[MAX_JOBS][MAX_OP_TYPES] = {0};
 
 		const int numJobs = problem.numJobs;
 		const int numMachines = problem.numMachines;
@@ -414,9 +414,9 @@ __global__ void SolveManyWeightsKernel(
 			if(bestJobID == -1) break;
 
 			// Debug: Score print
-			if(weightSet == 0 && problemIdxInBlock == 0 && threadIdx.x == 0 && bestJobID == 0 && bestOpID == 0) {
-				printf("[DEBUG] Initial Score=%.2f\n", bestScoreValue);
-			}
+			// if(weightSet == 0 && problemIdxInBlock == 0 && threadIdx.x == 0 && bestJobID == 0 && bestOpID == 0) {
+			// 	printf("[DEBUG] Initial Score=%.2f\n", bestScoreValue);
+			// }
 
 			GPUJob& bestJob = problem.jobs[bestJobID];	// problem is const, so bestJob needs to be const if problem.jobs not modifiable
 			GPUOperation& bestOperation = local_ops[bestJob.operationsOffset + bestOpID];

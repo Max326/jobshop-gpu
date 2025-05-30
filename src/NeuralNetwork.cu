@@ -124,7 +124,7 @@ NeuralNetwork &NeuralNetwork::operator=(NeuralNetwork &&other) noexcept {
 }
 
 // Funkcja aktywacji scaleTanh2
-__device__ float ScaleTanh2(float x) {
+__noinline__ __device__ float ScaleTanh2(float x) {
 	// Sprawdź, czy wejście jest NaN lub Inf
 	if(isnan(x) || isinf(x)) {
 		printf("[ERROR] ScaleTanh2 received invalid input: %f\n", x);
