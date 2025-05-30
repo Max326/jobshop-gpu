@@ -364,7 +364,9 @@ __global__ void SolveManyWeightsKernel(
                             features[startIndex + i] = ScaleTanh2(static_cast<float>(opTypeCount[i]));
                         }
 						features[startIndex + operation.type] = ScaleTanh2(static_cast<float>(opTypeCount[operation.type] - 1));
-						// --features[totOpLeftStart + operation.type]; // because we score for the operation as if it was processed // TODO scale
+
+
+						// --features[totOpLeftStart + operation.type]; // because we score for the operation as if it was processed 
                         //* total number of operations left (of each type) - end
 
                         //* job's operations left (of each type) - start
@@ -373,7 +375,7 @@ __global__ void SolveManyWeightsKernel(
                             features[startIndex + i] = ScaleTanh2(static_cast<float>(opTypePerJobCount[jobID][i]));
                         }
 						features[startIndex + operation.type] = ScaleTanh2(static_cast<float>(opTypePerJobCount[jobID][operation.type] - 1));
-                        // --features[jobOpLeftStart + operation.type]; // because we score for the operation as if it was processed // TODO scale
+                        // --features[jobOpLeftStart + operation.type]; // because we score for the operation as if it was processed
                         //* job's operations left (of each type) - end
 
                         //* one hot job type encoding - start
