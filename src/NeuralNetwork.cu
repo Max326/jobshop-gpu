@@ -10,68 +10,94 @@
 __device__ __managed__ int gpu_error_flag = 0;
 
 void NeuralNetwork::InitializeCudaData() {
-	// 1. Calculate offsets for each layer's weights and biases
-	FlattenParams();
+    // 1. Calculate offsets for each layer's weights and biases
+    FlattenParams(); // Upewnij się, że flattenedWeights/Biases są gotowe
 
-	/* std::cout << "\nFlattened weights size: " << flattenedWeights.size() << "\n";
-	std::cout << "Flattened biases size: " << flattenedBiases.size() << "\n"; */
+    size_t total_weights_bytes = 0;
+    if (!flattenedWeights.empty()) { // Użyj flattenedWeights do obliczenia rozmiaru
+        total_weights_bytes = flattenedWeights.size() * sizeof(float);
+    } else { // Fallback na iterowanie po `weights` jeśli `flattenedWeights` jest puste (np. przed FlattenParams)
+        for(const auto& lw : weights) total_weights_bytes += lw.size() * sizeof(float);
+    }
 
-	/* std::cout << "First few weights: ";
-	for(int i = 0; i < std::min(5, (int)flattenedWeights.size()); i++)
-		std::cout << flattenedWeights[i] << " ";
-		std::cout << "\n"; */
+    size_t total_biases_bytes = 0;
+    if (!flattenedBiases.empty()) { // Użyj flattenedBiases do obliczenia rozmiaru
+        total_biases_bytes = flattenedBiases.size() * sizeof(float);
+    } else { // Fallback
+        for(const auto& lb : biases) total_biases_bytes += lb.size() * sizeof(float);
+    }
 
-	layerOffsets.resize(weights.size());
-	biasOffsets.resize(biases.size());
-	size_t total_weights = 0;
-	size_t total_biases = 0;
 
-	for(size_t i = 0; i < weights.size(); ++i) {
-		layerOffsets[i] = total_weights;
-		total_weights += weights[i].size();
+    if (cudaData->manage_gpu_buffers) {
+        // 2. Allocate GPU memory for weights and biases if NN manages them
+        if (total_weights_bytes > 0) {
+            CUDA_CHECK(cudaMalloc(&cudaData->d_weights, total_weights_bytes));
+        }
+        if (total_biases_bytes > 0) {
+            CUDA_CHECK(cudaMalloc(&cudaData->d_biases, total_biases_bytes));
+        }
 
-		biasOffsets[i] = total_biases;
-		total_biases += biases[i].size();
-	}
+        // 4. Initialize weight buffers to zero (tylko jeśli alokowane i zarządzane przez NN)
+        if (cudaData->d_weights && total_weights_bytes > 0) {
+            CUDA_CHECK(cudaMemset(cudaData->d_weights, 0, total_weights_bytes)); // Użyj 0 dla memset, nie 0.0f
+        }
+        if (cudaData->d_biases && total_biases_bytes > 0) {
+            CUDA_CHECK(cudaMemset(cudaData->d_biases, 0, total_biases_bytes)); // Użyj 0 dla memset
+        }
 
-	// 2. Allocate GPU memory for weights and biases
-	CUDA_CHECK(cudaMalloc(&cudaData->d_weights, total_weights * sizeof(float)));
-	CUDA_CHECK(cudaMalloc(&cudaData->d_biases, total_biases * sizeof(float)));
+        // 5. Copy weights and biases to GPU if NN manages them and host data exists
+        if (cudaData->d_weights && !flattenedWeights.empty()) {
+            CUDA_CHECK(cudaMemcpy(cudaData->d_weights,
+                                  flattenedWeights.data(),
+                                  total_weights_bytes,
+                                  cudaMemcpyHostToDevice));
+        } else if (cudaData->d_weights && !weights.empty() && total_weights_bytes > 0) { // Fallback na kopiowanie warstwa po warstwie
+            size_t current_offset = 0;
+            for(const auto& lw : weights) {
+                if (!lw.empty()) {
+                    CUDA_CHECK(cudaMemcpy(cudaData->d_weights + current_offset, lw.data(), lw.size() * sizeof(float), cudaMemcpyHostToDevice));
+                    current_offset += lw.size();
+                }
+            }
+        }
 
-	// 3. Find the maximum layer size for input/output buffers
-	int max_layer_size = 0;
-	for(int size: topology) {
-		if(size > max_layer_size) {
-			max_layer_size = size;
-		}
-	}
 
-	// Allocate input and output buffers to the maximum layer size
-	CUDA_CHECK(cudaMalloc(&cudaData->d_input, max_layer_size * sizeof(float)));
-	CUDA_CHECK(cudaMalloc(&cudaData->d_output, max_layer_size * sizeof(float)));
+        if (cudaData->d_biases && !flattenedBiases.empty()) {
+            CUDA_CHECK(cudaMemcpy(cudaData->d_biases,
+                                  flattenedBiases.data(),
+                                  total_biases_bytes,
+                                  cudaMemcpyHostToDevice));
+        } else if (cudaData->d_biases && !biases.empty() && total_biases_bytes > 0) { // Fallback
+            size_t current_offset = 0;
+            for(const auto& lb : biases) {
+                if (!lb.empty()) {
+                    CUDA_CHECK(cudaMemcpy(cudaData->d_biases + current_offset, lb.data(), lb.size() * sizeof(float), cudaMemcpyHostToDevice));
+                    current_offset += lb.size();
+                }
+            }
+        }
+    }
+    // Jeśli !manage_gpu_buffers, to d_weights i d_biases są ustawiane z zewnątrz.
 
-	// 4. Initialize weight buffers to zero
-	CUDA_CHECK(cudaMemset(cudaData->d_weights, 0.0f, total_weights * sizeof(float)));
-	CUDA_CHECK(cudaMemset(cudaData->d_biases, 0.0f, total_biases * sizeof(float)));
+    // 3. Find the maximum layer size for input/output buffers
+    int max_layer_size = 0;
+    for(int size: topology) {
+        if(size > max_layer_size) {
+            max_layer_size = size;
+        }
+    }
+    if (max_layer_size == 0 && !topology.empty()) max_layer_size = topology[0]; // Minimalny fallback
+    if (max_layer_size == 0) max_layer_size = 1; // Absolutny minimalny fallback
 
-	// 5. Copy weights and biases to GPU
-	size_t weight_offset = 0;
-	size_t bias_offset = 0;
 
-	for(size_t i = 0; i < weights.size(); ++i) {
-		CUDA_CHECK(cudaMemcpy(cudaData->d_weights + weight_offset,
-							  weights[i].data(),
-							  weights[i].size() * sizeof(float),
-							  cudaMemcpyHostToDevice));
-
-		CUDA_CHECK(cudaMemcpy(cudaData->d_biases + bias_offset,
-							  biases[i].data(),
-							  biases[i].size() * sizeof(float),
-							  cudaMemcpyHostToDevice));
-
-		weight_offset += weights[i].size();
-		bias_offset += biases[i].size();
-	}
+    // Allocate input and output buffers - te są zawsze zarządzane przez NeuralNetwork
+    // Alokuj tylko jeśli jeszcze nie istnieją (np. przy ponownej inicjalizacji)
+    if (!cudaData->d_input && max_layer_size > 0) {
+        CUDA_CHECK(cudaMalloc(&cudaData->d_input, max_layer_size * sizeof(float)));
+    }
+    if (!cudaData->d_output && max_layer_size > 0) {
+        CUDA_CHECK(cudaMalloc(&cudaData->d_output, max_layer_size * sizeof(float)));
+    }
 }
 
 NeuralNetwork::NeuralNetwork() : cudaData(std::make_unique<CudaData>()) {}
@@ -108,12 +134,15 @@ NeuralNetwork::NeuralNetwork(const std::vector<int> &topology,
 }
 
 NeuralNetwork::~NeuralNetwork() {
-	if(cudaData) {
-		cudaFree(cudaData->d_weights);
-		cudaFree(cudaData->d_biases);
-		cudaFree(cudaData->d_input);
-		cudaFree(cudaData->d_output);
-	}
+    if(cudaData) {
+        if (cudaData->manage_gpu_buffers) { // Zwalniaj wagi/biasy tylko jeśli NN nimi zarządza
+            if(cudaData->d_weights) cudaFree(cudaData->d_weights);
+            if(cudaData->d_biases) cudaFree(cudaData->d_biases);
+        }
+        // d_input i d_output są zawsze zwalniane, bo są zawsze zarządzane przez NN
+        if(cudaData->d_input) cudaFree(cudaData->d_input);
+        if(cudaData->d_output) cudaFree(cudaData->d_output);
+    }
 }
 
 // Konstruktor przenoszący
@@ -270,11 +299,13 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float* features,
         }
         
 
-        // for(int i=0; i < out_size; ++i) { // Copy to activations for next layer
-        //     activations[i] = next_activations[i];
-        // }
+        for (int i = 0; i < out_size; ++i) {
+            if (i < sizeof(activations)/sizeof(float) && i < sizeof(next_activations)/sizeof(float)) { // Sprawdzenie granic odczytu/zapisu
+                 activations[i] = next_activations[i];
+            }
+        }
 
-		memcpy(activations, next_activations, out_size * sizeof(float));
+		//memcpy(activations, next_activations, out_size * sizeof(float));
 
         weight_idx_offset += in_size * out_size;
         bias_idx_offset += out_size;

@@ -11,9 +11,10 @@ JobShopGPUEvaluator* g_gpu_evaluator = nullptr;
 
 int main(int argc, char *argv[])
 {
+    cudaError_t stackLimitError = cudaDeviceSetLimit(cudaLimitStackSize, 4096);
     const std::vector<int> topology = {101, 32, 16, 1};
     const int batch_size = 50;
-    const std::string problem_file = "sliwa1.json";
+    const std::string problem_file = "exp_data.json";
     int population_size = 192;//:0
 
     int nn_weights_count = NeuralNetwork::CalculateTotalParameters(topology);//:0
@@ -31,7 +32,7 @@ int main(int argc, char *argv[])
         
     } */
     
-    double sigma = 0.4;//:0
+    double sigma = 0.1;//:0
     CMAParameters<> cmaparams(x0, sigma, population_size);//:0  
     cmaparams.set_algo(sepaCMAES);
     

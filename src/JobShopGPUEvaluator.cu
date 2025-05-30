@@ -47,10 +47,32 @@ JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const 
     CUDA_CHECK(cudaMalloc(&d_all_candidate_biases_, total_biases_size_));
 
     for (int r = 0; r < nn_candidate_count_; ++r) {
-        neural_networks_[r] = NeuralNetwork(nn_topology_); // Create a NeuralNetwork
-        neural_networks_[r].cudaData->d_weights = d_all_candidate_weights_ + r * nn_total_weights_per_network_;
-        neural_networks_[r].cudaData->d_biases = d_all_candidate_biases_ + r * nn_total_biases_per_network_;
-        host_evaluators_[r] = neural_networks_[r].GetDeviceEvaluator(); // Get its DeviceEvaluator
+        neural_networks_[r] = NeuralNetwork(nn_topology_); // Tworzy NN. Domyślnie manage_gpu_buffers = true,
+                                                           // więc NN alokuje swoje d_weights/d_biases.
+        
+        // Ponieważ będziemy używać współdzielonych pul, musimy zwolnić te właśnie zaalokowane przez NN.
+        if (neural_networks_[r].cudaData) { // Sprawdź czy cudaData istnieje
+            if (neural_networks_[r].cudaData->d_weights) {
+                CUDA_CHECK(cudaFree(neural_networks_[r].cudaData->d_weights));
+                neural_networks_[r].cudaData->d_weights = nullptr; // Ustaw na null po zwolnieniu
+            }
+            if (neural_networks_[r].cudaData->d_biases) {
+                CUDA_CHECK(cudaFree(neural_networks_[r].cudaData->d_biases));
+                neural_networks_[r].cudaData->d_biases = nullptr; // Ustaw na null po zwolnieniu
+            }
+
+            // Ustaw wskaźniki na współdzielone, prealokowane pule
+            neural_networks_[r].cudaData->d_weights = d_all_candidate_weights_ + r * nn_total_weights_per_network_;
+            neural_networks_[r].cudaData->d_biases = d_all_candidate_biases_ + r * nn_total_biases_per_network_;
+            
+            // Poinformuj instancję NN, że nie powinna zwalniać tych współdzielonych wskaźników
+            neural_networks_[r].cudaData->manage_gpu_buffers = false; 
+        } else {
+            // To nie powinno się zdarzyć, jeśli konstruktor NN działa poprawnie
+            throw std::runtime_error("JobShopGPUEvaluator: neural_networks_[" + std::to_string(r) + "].cudaData is null after construction.");
+        }
+        
+        host_evaluators_[r] = neural_networks_[r].GetDeviceEvaluator(); 
     }    
 
     // Allocate and copy DeviceEvaluators to GPU
@@ -178,14 +200,14 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
             for (int w_idx = 0; w_idx < prevLayerSize * currLayerSize; ++w_idx) {
                 if (weight_buffer_offset + w_idx < this->total_weights_size_ / sizeof(float)) { // Sprawdzenie granic
                     h_pinned_all_weights_[weight_buffer_offset + w_idx] = static_cast<float>(candidates(paramIdx++, r));
-                } else { /* Obsługa błędu przekroczenia bufora */ }
+                } else { /* Obsługa błędu przekrocenia bufora */ }
             }
             weight_buffer_offset += prevLayerSize * currLayerSize; // Przesuń główny offset dla następnej warstwy w następnej iteracji 'r'
 
             for (int b_idx = 0; b_idx < currLayerSize; ++b_idx) {
                  if (bias_buffer_offset + b_idx < this->total_biases_size_ / sizeof(float)) { // Sprawdzenie granic
                     h_pinned_all_biases_[bias_buffer_offset + b_idx] = static_cast<float>(candidates(paramIdx++, r));
-                 } else { /* Obsługa błędu przekroczenia bufora */ }
+                 } else { /* Obsługa błędu przekrocenia bufora */ }
             }
             bias_buffer_offset += currLayerSize; // Przesuń główny offset dla następnej warstwy w następnej iteracji 'r'
         }

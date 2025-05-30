@@ -125,7 +125,7 @@ void JobShopHeuristic::SolveBatchNew(
 	// + (nn_total_params_for_one_network * sizeof(float) for combined weights & biases of ONE network)
 	size_t dynamic_shared_mem_size = (threads_per_block * sizeof(float)) + (nn_total_params_for_one_network * sizeof(float));
 
-	cudaDeviceSetLimit(cudaLimitStackSize, 4096);
+	//cudaDeviceSetLimit(cudaLimitStackSize, 4096);
 	// int reset_value = 0; // If gpu_error_flag is used
 	// cudaMemcpyToSymbol(gpu_error_flag, &reset_value, sizeof(int), 0, cudaMemcpyHostToDevice);
 
@@ -137,7 +137,7 @@ void JobShopHeuristic::SolveBatchNew(
 		numProblems_per_block,	// This is how many problems each block should iterate up to.
 		maxOpsPerProblem);
 
-	cudaDeviceSynchronize();
+	//cudaDeviceSynchronize();
 }
 
 // Allocate GPU memory for solutions
@@ -262,17 +262,8 @@ __global__ void SolveManyWeightsKernel(
 
 	// --- Load NN Parameters into Shared Memory ---
 	const NeuralNetwork::DeviceEvaluator& nn_eval_global_ptr = evaluators[weightSet];  // Get the evaluator for this block
-
-	// Calculate total weights and biases for this NN
-	// This must be done by all threads or broadcast, as it's needed for shared mem partitioning
-	int nn_total_weights = 0;
-	int nn_total_biases = 0;
-	if(nn_eval_global_ptr.num_layers > 0) {
-		for(int i = 1; i < nn_eval_global_ptr.num_layers; ++i) {
-			nn_total_weights += nn_eval_global_ptr.d_topology[i - 1] * nn_eval_global_ptr.d_topology[i];
-			nn_total_biases += nn_eval_global_ptr.d_topology[i];
-		}
-	}
+    int nn_total_weights = nn_eval_global_ptr.total_nn_weights;
+    int nn_total_biases = nn_eval_global_ptr.total_nn_biases;
 	// else: handle error or assume valid if pre-checked
 
 	// Partition 2: Storage for NN weights for this block (starts after shared_makespans)
@@ -281,11 +272,6 @@ __global__ void SolveManyWeightsKernel(
 	// Partition 3: Storage for NN biases for this block (starts after sm_weights)
 	float* sm_biases = shared_block_data + blockDim.x + nn_total_weights;
 
-	// Cooperatively load NN parameters from global to shared memory
-	// nn_eval_global_ptr.weights and nn_eval_global_ptr.biases point to global device memory
-	
-	// Load weights cooperatively and coalesced
-	// Calculate how many elements each thread might load in total passes
 	int num_passes_weights = (nn_total_weights + blockDim.x - 1) / blockDim.x;
 	for (int pass = 0; pass < num_passes_weights; ++pass) {
 		int current_element_idx = pass * blockDim.x + threadIdx.x;

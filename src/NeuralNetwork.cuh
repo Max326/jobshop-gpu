@@ -105,6 +105,8 @@ public:
 		int d_topology[MAX_NN_LAYERS];	// Embedded topology array
 		int num_layers;
 		int max_layer_size;
+		int total_nn_weights;           
+        int total_nn_biases; 
 
 		__device__ void ReportAndAbort(const char* msg) const {
 			atomicExch(&gpu_error_flag, 1);
@@ -118,13 +120,13 @@ public:
 	};
 
 	__host__ DeviceEvaluator GetDeviceEvaluator() const {
-		if(!cudaData || !cudaData->d_weights || !cudaData->d_biases) {
+/* 		if(!cudaData || !cudaData->d_weights || !cudaData->d_biases) {
 			throw std::runtime_error("CUDA data not initialized for GetDeviceEvaluator");
 		}
 		if(topology.size() > MAX_NN_LAYERS) {
 			throw std::runtime_error("Network topology exceeds MAX_NN_LAYERS defined in DeviceEvaluator.");
 		}
-
+ */
 		DeviceEvaluator eval;
 		eval.weights = cudaData->d_weights;
 		eval.biases = cudaData->d_biases;
@@ -138,6 +140,17 @@ public:
 		}
 		eval.num_layers = static_cast<int>(topology.size());
 		eval.max_layer_size = NeuralNetwork::maxLayerSize;
+
+		eval.total_nn_weights = 0;
+        eval.total_nn_biases = 0;
+        if (eval.num_layers > 1) {
+            for (int i = 1; i < eval.num_layers; ++i) {
+                if (eval.d_topology[i-1] > 0 && eval.d_topology[i] > 0) { // Dodatkowe sprawdzenie
+                    eval.total_nn_weights += eval.d_topology[i - 1] * eval.d_topology[i];
+                    eval.total_nn_biases += eval.d_topology[i];
+                }
+            }
+        }
 
 		return eval;
 	}
@@ -156,6 +169,7 @@ public:
 		float* d_biases = nullptr;
 		float* d_input = nullptr;
 		float* d_output = nullptr;
+		bool manage_gpu_buffers = true;
 	};	// Forward declaration
 	std::unique_ptr<CudaData> cudaData;	 // Cuda data incapsulation
 
