@@ -70,7 +70,6 @@ SolutionManager::GPUSolutions JobShopHeuristic::CPUSolution::ToGPU() const {
 	return gpuSol;
 }
 
-// New solver
 void JobShopHeuristic::SolveBatchNew(
 	const GPUProblem* problems,
 	const NeuralNetwork::DeviceEvaluator* evaluators,
@@ -84,7 +83,7 @@ void JobShopHeuristic::SolveBatchNew(
 	cudaStream_t stream,				 // Removed default stream = 0 as it's passed from evaluator
 	int nn_total_params_for_one_network	 // <<< NEW PARAMETER
 ) {
-	int threads_per_block = 64;	 // This is your blockDim.x
+	int threads_per_block = 128;	 // This is your blockDim.x
 	int total_cuda_blocks = numWeights_total_blocks;
 
 	// Calculate dynamic shared memory size:
@@ -284,6 +283,11 @@ __global__ void SolveManyWeightsKernel(
 			sm_biases[current_element_idx] = nn_eval_global_ptr.biases[current_element_idx];
 		}
 	}
+
+	// for (int idx = threadIdx.x; idx < numBiases_per_block; idx += blockDim.x) {
+	// 	sm_biases[idx] = nn_eval_global_ptr.biases[idx];
+	// }
+
 	__syncthreads();  // IMPORTANT: Ensure all threads finish loading before any thread proceeds
 
 	// --- Main problem-solving logic ---
