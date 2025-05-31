@@ -67,4 +67,8 @@ public:
     bool stop() {
         return CMAStrategy<CovarianceUpdate>::stop();
     }
+
+    float get_best_fvalue() const {
+        return _solutions.get_candidate(0).get_fvalue();
+    }
 };

@@ -289,6 +289,8 @@ __global__ void SolveManyWeightsKernel(
 		GPUOperation* local_ops = &ops_working[base_op_idx];
 
 		// ... (rest of your existing problem setup: jobScheduledOps, machine_times, etc. from JobShopHeuristic.cu[6]) ...
+		unsigned short int unscheduledOps = 0; // validation
+
 		unsigned short int jobScheduledOps[MAX_JOBS] = {0};
 		unsigned short int machine_times[MAX_MACHINES] = {0};
 
@@ -306,6 +308,7 @@ __global__ void SolveManyWeightsKernel(
 				GPUOperation& op = local_ops[job.operationsOffset + opID];
 				opTypePerJobCount[jobID][op.type]++;
 				opTypeCount[op.type]++;
+				unscheduledOps++;
 			}
 		}
 
@@ -434,6 +437,8 @@ __global__ void SolveManyWeightsKernel(
 				jobTypeCount[bestJob.type]--;
 			}
 
+			unscheduledOps--;
+			
 			bestOperation.predecessorCount = -1;
 			for(int s = 0; s < bestOperation.successorCount; ++s) {
 				int successor_op_array_idx = problem.successorsIDs[bestOperation.successorsOffset + s];
@@ -448,6 +453,12 @@ __global__ void SolveManyWeightsKernel(
 		} while(scheduled_any);
 		makespan_val = static_cast<float>(current_local_makespan);
 		shared_makespans[problemIdxInBlock] = makespan_val;
+
+		if (unscheduledOps != 0) {
+			// Debug: Print problem details if there are unscheduled operations
+			printf("[KERNEL] Unscheduled operations remaining: %d\n", unscheduledOps);
+		}
+
 	} else {
 		// Threads outside the numProblemsToSolvePerBlock range (e.g. if blockDim.x > numProblemsToSolvePerBlock)
 		shared_makespans[problemIdxInBlock] = 0.0f;
@@ -466,7 +477,7 @@ __global__ void SolveManyWeightsKernel(
 		} else {
 			results[weightSet] = 0.0f;
 		}
-		printf("[KERNEL] weightSet=%d, avg makespan=%.2f\n", weightSet, results[weightSet]);  // Keep for debug if needed
+		// printf("[KERNEL] weightSet= %d, \t avg makespan= %.2f\n", weightSet, results[weightSet]);  // Keep for debug if needed
 	}
 }
 

@@ -50,6 +50,7 @@ int main(int argc, char *argv[])
         optim.eval(candidates);//:0
         optim.tell();//:0
         optim.inc_iter();//:0
+        std::cout << "Best makespan: " << optim.get_best_fvalue() << std::endl;
         batch_start += batch_size;
         global_iter++;
         
