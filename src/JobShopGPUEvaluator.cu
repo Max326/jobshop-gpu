@@ -11,7 +11,7 @@ JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const 
     current_d_ops_working_size_ = 0;
 
     // all problems at once 
-    cpu_problems_ = JobShopData::LoadFromParallelJson(problem_file, 1500);//TODO fix nummber of problem assignment 
+    cpu_problems_ = JobShopData::LoadFromParallelJson(problem_file, 1000);//TODO fix nummber of problem assignment 
     if (cpu_problems_.empty())
         throw std::runtime_error("No problems loaded!");
 

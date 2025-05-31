@@ -13,7 +13,7 @@ int main(int argc, char *argv[])
 {
     const std::vector<int> topology = {86, 32, 16, 1};
     const int batch_size = 50;
-    const std::string problem_file = "JT(5)_merged.json";
+    const std::string problem_file = "rnd_JT(5)_J(15)_M(5)_JO(5-10)_O(20)_OM(1-3)_learn.json";
     int population_size = 192;//:0
 
     int nn_weights_count = NeuralNetwork::CalculateTotalParameters(topology);//:0
