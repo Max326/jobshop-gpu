@@ -147,7 +147,9 @@ __noinline__ __device__ float ScaleTanh2(float x) {
 }
 
 // New Evaluate function using shared memory pointers
-__device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float* features, const float* p_shared_weights, const float* p_shared_biases) const {
+__device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float* __restrict__ features, 
+														  const float* __restrict__ p_shared_weights, 
+														  const float* __restrict__ p_shared_biases) const {
     // Use this->max_layer_size which is now set correctly
 
     if (this->max_layer_size <= 0 || this->max_layer_size > 86 /*Match static const*/) { // Basic sanity check
@@ -182,7 +184,8 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float* features,
 
         for(int neuron = 0; neuron < out_size; neuron++) {
             float sum = p_shared_biases[bias_idx_offset + neuron]; // Read from shared biases
-
+			
+			#pragma unroll
             for(int i = 0; i < in_size; i++) {
                 // Read from shared weights
                 float weight_val = p_shared_weights[weight_idx_offset + neuron * in_size + i];

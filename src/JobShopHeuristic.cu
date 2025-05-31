@@ -76,8 +76,10 @@ void JobShopHeuristic::SolveBatchNew(
 	const NeuralNetwork::DeviceEvaluator* evaluators,
 	GPUOperation* ops_working,
 	float* results,
-	int numProblems_per_block,	  // Renamed for clarity: num FJSS problems this block will handle
-	int numWeights_total_blocks,  // Renamed for clarity: total NNs, so total blocks
+	int numProblems_per_block,	  // num FJSS problems this block will handle
+	int numWeights_total_blocks,  // total NNs, so total blocks
+	int numWeights_per_block,  // how many weights per block
+	int numBiases_per_block, // how many biases per block
 	int maxOpsPerProblem,
 	cudaStream_t stream,				 // Removed default stream = 0 as it's passed from evaluator
 	int nn_total_params_for_one_network	 // <<< NEW PARAMETER
@@ -109,6 +111,8 @@ void JobShopHeuristic::SolveBatchNew(
 		ops_working,
 		results,
 		numProblems_per_block,	// This is how many problems each block should iterate up to.
+		numWeights_per_block,	
+		numBiases_per_block,
 		maxOpsPerProblem);
 
 	cudaDeviceSynchronize();
@@ -220,6 +224,8 @@ __global__ void SolveManyWeightsKernel(
 	GPUOperation* ops_working,
 	float* results,
 	int numProblemsToSolvePerBlock,	 // Renamed for clarity (was numProblems)
+	int numWeights_per_block,	
+	int	numBiases_per_block,
 	int maxOpsPerProblem) {
 	// if(gpu_error_flag) { return; } // Re-enable if needed, but you said removing checks helped
 
@@ -239,40 +245,42 @@ __global__ void SolveManyWeightsKernel(
 
 	// Calculate total weights and biases for this NN
 	// This must be done by all threads or broadcast, as it's needed for shared mem partitioning
-	int nn_total_weights = 0;
-	int nn_total_biases = 0;
-	if(nn_eval_global_ptr.num_layers > 0) {
-		for(int i = 1; i < nn_eval_global_ptr.num_layers; ++i) {
-			nn_total_weights += nn_eval_global_ptr.d_topology[i - 1] * nn_eval_global_ptr.d_topology[i];
-			nn_total_biases += nn_eval_global_ptr.d_topology[i];
-		}
-	}
+	
+	//* int numWeights_per_block = numWeights_per_block;
+	//* int numBiases_per_block = numBiases_per_block;
+
+	// if(nn_eval_global_ptr.num_layers > 0) {
+	// 	for(int i = 1; i < nn_eval_global_ptr.num_layers; ++i) {
+	// 		numWeights_per_block += nn_eval_global_ptr.d_topology[i - 1] * nn_eval_global_ptr.d_topology[i];
+	// 		numBiases_per_block += nn_eval_global_ptr.d_topology[i];
+	// 	}
+	// }
 	// else: handle error or assume valid if pre-checked
 
 	// Partition 2: Storage for NN weights for this block (starts after shared_makespans)
 	float* sm_weights = shared_block_data + blockDim.x;
 
 	// Partition 3: Storage for NN biases for this block (starts after sm_weights)
-	float* sm_biases = shared_block_data + blockDim.x + nn_total_weights;
+	float* sm_biases = shared_block_data + blockDim.x + numWeights_per_block;
 
 	// Cooperatively load NN parameters from global to shared memory
 	// nn_eval_global_ptr.weights and nn_eval_global_ptr.biases point to global device memory
 	
 	// Load weights cooperatively and coalesced
 	// Calculate how many elements each thread might load in total passes
-	int num_passes_weights = (nn_total_weights + blockDim.x - 1) / blockDim.x;
+	int num_passes_weights = (numWeights_per_block + blockDim.x - 1) / blockDim.x;
 	for (int pass = 0; pass < num_passes_weights; ++pass) {
 		int current_element_idx = pass * blockDim.x + threadIdx.x;
-		if (current_element_idx < nn_total_weights) {
+		if (current_element_idx < numWeights_per_block) {
 			sm_weights[current_element_idx] = nn_eval_global_ptr.weights[current_element_idx];
 		}
 	}
 
 	// Load biases cooperatively and coalesced
-	int num_passes_biases = (nn_total_biases + blockDim.x - 1) / blockDim.x;
+	int num_passes_biases = (numBiases_per_block + blockDim.x - 1) / blockDim.x;
 	for (int pass = 0; pass < num_passes_biases; ++pass) {
 		int current_element_idx = pass * blockDim.x + threadIdx.x;
-		if (current_element_idx < nn_total_biases) {
+		if (current_element_idx < numBiases_per_block) {
 			sm_biases[current_element_idx] = nn_eval_global_ptr.biases[current_element_idx];
 		}
 	}

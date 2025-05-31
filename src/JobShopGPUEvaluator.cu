@@ -292,6 +292,8 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
         d_problems_, d_evaluators_, d_ops_working_, d_results, // USE THE CLASS MEMBER d_ops_working_
         num_problems_to_evaluate_, // This is numProblems_per_block for the kernel
         nn_candidate_count_, // This is numWeights_total_blocks for the kernel
+        nn_total_weights_per_network_, // <<< Pass the total weights for one NN here
+        nn_total_biases_per_network_, // <<< Pass the total biases for one NN here
         max_ops_per_problem_,
         stream, // Pass the stream
         nn_total_params_ // <<< Pass the total parameters for one NN here

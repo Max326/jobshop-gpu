@@ -78,8 +78,10 @@ public:
         const NeuralNetwork::DeviceEvaluator* evaluators,
         GPUOperation* ops_working,
         float* results,
-        int numProblems,
-        int numWeights,
+        int numProblems_per_block,	  
+        int numWeights_total_blocks,  
+        int numWeights_per_block,  
+        int numBiases_per_block, 
         int maxOpsPerProblem,
         cudaStream_t stream,
         int nn_total_params_for_one_network
@@ -106,6 +108,8 @@ __global__ void SolveManyWeightsKernel(
     GPUOperation* ops_working,
     float* results,
     int numProblemsToSolvePerBlock,
+    int numWeights_per_block,	
+	int	numBiases_per_block,
     int maxOpsPerProblem
 );
 
