@@ -247,7 +247,7 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
     CUDA_CHECK(cudaMemcpyAsync(d_all_candidate_biases_, h_pinned_all_biases_, total_biases_size_, cudaMemcpyHostToDevice, stream));
 
     // Launch the pointer update kernel
-    int threadsPerBlock = 64; // Adjust as needed
+    int threadsPerBlock = 128; // Adjust as needed
     int blocks = (nn_candidate_count + threadsPerBlock - 1) / threadsPerBlock;
     UpdateEvaluatorPointersKernel<<<blocks, threadsPerBlock, 0, stream>>>(
         d_evaluators_,

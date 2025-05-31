@@ -184,12 +184,14 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float* __restric
 
         for(int neuron = 0; neuron < out_size; neuron++) {
             float sum = p_shared_biases[bias_idx_offset + neuron]; // Read from shared biases
+			int base = weight_idx_offset + neuron * in_size;
 			
 			#pragma unroll
             for(int i = 0; i < in_size; i++) {
                 // Read from shared weights
-                float weight_val = p_shared_weights[weight_idx_offset + neuron * in_size + i];
-                sum += activations[i] * weight_val;
+                // float weight_val = p_shared_weights[weight_idx_offset + neuron * in_size + i];
+                // sum += activations[i] * weight_val;
+				sum += activations[i] * p_shared_weights[base + i];
             }
             next_activations[neuron] = ScaleTanh2(sum); 
         }
@@ -199,7 +201,9 @@ __device__ float NeuralNetwork::DeviceEvaluator::Evaluate(const float* __restric
         //     activations[i] = next_activations[i];
         // }
 
-		memcpy(activations, next_activations, out_size * sizeof(float));
+		for (int i = 0; i < out_size; ++i) {
+			activations[i] = next_activations[i];
+		}
 
         weight_idx_offset += in_size * out_size;
         bias_idx_offset += out_size;
