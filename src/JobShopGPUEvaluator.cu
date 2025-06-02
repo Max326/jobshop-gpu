@@ -4,14 +4,14 @@
 #include <cstring>
 #include <chrono>
 
-JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const std::vector<int>& nn_topology, const int &population_size)
+JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const std::vector<int>& nn_topology, const int &population_size, const int problem_count)
     : nn_topology_(nn_topology), nn_candidate_count_(population_size)
 {
     d_ops_working_ = nullptr;
     current_d_ops_working_size_ = 0;
 
     // all problems at once 
-    cpu_problems_ = JobShopData::LoadFromParallelJson(problem_file, 3100);//TODO fix nummber of problem assignment 
+    cpu_problems_ = JobShopData::LoadFromParallelJson(problem_file, problem_count);//TODO fix nummber of problem assignment 
     if (cpu_problems_.empty())
         throw std::runtime_error("No problems loaded!");
 

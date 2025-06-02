@@ -12,7 +12,7 @@
 
 class JobShopGPUEvaluator {
 public:
-    JobShopGPUEvaluator(const std::string& problem_file, const std::vector<int>& nn_topology, const int &population_size);
+    JobShopGPUEvaluator(const std::string& problem_file, const std::vector<int>& nn_topology, const int &population_size, const int problem_count);
     ~JobShopGPUEvaluator();
 
     // Ustawia batch problemów do ewaluacji (nie kopiuje z pliku, tylko z RAM)

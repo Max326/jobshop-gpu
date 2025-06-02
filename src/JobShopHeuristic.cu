@@ -83,7 +83,7 @@ void JobShopHeuristic::SolveBatchNew(
 	cudaStream_t stream,				 // Removed default stream = 0 as it's passed from evaluator
 	int nn_total_params_for_one_network	 // <<< NEW PARAMETER
 ) {
-	int threads_per_block = 128;	 // This is your blockDim.x
+	int threads_per_block = 192;	 // This is your blockDim.x
 	int total_cuda_blocks = numWeights_total_blocks;
 
 	// Calculate dynamic shared memory size:
@@ -104,7 +104,7 @@ void JobShopHeuristic::SolveBatchNew(
 	// int reset_value = 0; // If gpu_error_flag is used
 	// cudaMemcpyToSymbol(gpu_error_flag, &reset_value, sizeof(int), 0, cudaMemcpyHostToDevice);
 
-	SolveManyWeightsKernel<<<total_cuda_blocks, threads_per_block, dynamic_shared_mem_size, stream>>>(
+	__launch_bounds__(192, 4) SolveManyWeightsKernel<<<total_cuda_blocks, threads_per_block, dynamic_shared_mem_size, stream>>>(
 		problems,
 		evaluators,
 		ops_working,
@@ -217,7 +217,7 @@ void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operatio
 	solution.makespan = std::max(solution.makespan, endTime);
 }
 
-__global__ void SolveManyWeightsKernel(
+__global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 	const GPUProblem* problems,
 	const NeuralNetwork::DeviceEvaluator* evaluators,  // This points to DeviceEvaluators in global memory
 	GPUOperation* ops_working,

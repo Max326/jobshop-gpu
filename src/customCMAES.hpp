@@ -4,7 +4,7 @@
 
 using namespace libcmaes;
 
-extern JobShopGPUEvaluator* g_gpu_evaluator;
+extern JobShopGPUEvaluator* g_gpu_test_evaluator;
 
 class customCMAStrategy : public CMAStrategy<CovarianceUpdate>
 {
@@ -45,7 +45,7 @@ public:
         }
         //std::cout << "eCandidates: " << eCandidates << std::endl;
 
-        fvalues = g_gpu_evaluator->EvaluateCandidates(eCandidates);
+        fvalues = g_gpu_test_evaluator->EvaluateCandidates(eCandidates);
         //std::cout << "fvalues: " << fvalues.transpose() << std::endl;
         // ...
         // ...
