@@ -32,7 +32,7 @@ int main(int argc, char *argv[])
     JobShopGPUEvaluator gpu_evaluator(test_problem_file, topology, population_size, 3100);
     g_gpu_test_evaluator = &gpu_evaluator;
 
-    g_gpu_validate_evaluator = new JobShopGPUEvaluator(validate_problem_file, topology, 1, 300); // 50 problems for validation
+    g_gpu_validate_evaluator = new JobShopGPUEvaluator(validate_problem_file, topology, 1, 350); // 50 problems for validation
 
     // int total_problems = gpu_evaluator.GetTotalProblems();
     std::vector<double> x0(nn_weights_count, 0.0);
