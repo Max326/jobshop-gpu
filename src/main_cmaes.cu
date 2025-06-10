@@ -84,12 +84,12 @@ int main(int argc, char *argv[])
         
             // 2. Evaluate on validation set (50 problems)
             // Prepare a matrix for a single candidate
-            Eigen::MatrixXd candidate_matrix(nn_weights_count, 1);
-            candidate_matrix.col(0) = current_best_weights;
+            Eigen::MatrixXd best_candidate_matrix(nn_weights_count, 1);
+            best_candidate_matrix.col(0) = current_best_weights;
         
             // Set the validation evaluator to the first 50 problems
             g_gpu_validate_evaluator->SetCurrentBatch(batch_start/10, batch_size);
-            Eigen::VectorXd val_results = g_gpu_validate_evaluator->EvaluateCandidates(candidate_matrix);
+            Eigen::VectorXd val_results = g_gpu_validate_evaluator->EvaluateCandidates(best_candidate_matrix);
         
             float avg_val_makespan = val_results[0]; // Since only one candidate
         
@@ -98,20 +98,22 @@ int main(int argc, char *argv[])
         
             // 3. If improved, replace population
             if (avg_val_makespan < best_val_makespan) {
+                std::cout << "[VALIDATION] New best found! Updating CMA-ES mean." << std::endl;
+
                 best_val_makespan = avg_val_makespan;
                 best_weights = current_best_weights;
         
                 // Replace all CMA-ES candidates with this best_weights
-                Eigen::MatrixXd new_population(nn_weights_count, population_size);
-                for (int i = 0; i < population_size; ++i)
-                    new_population.col(i) = best_weights;
+                // Eigen::MatrixXd new_population(nn_weights_count, population_size); // ? maybe leave this in?
+                // for (int i = 0; i < population_size; ++i)                          // ? maybe leave this in?
+                //     new_population.col(i) = best_weights;                          // ? maybe leave this in?
                 
-                auto solutions = optim.get_solutions();
+                auto& solutions = optim.get_solutions();
                 solutions.set_xmean(best_weights); // Set new mean
-                solutions.reset(); // Reset with new mean
+                // solutions.reset(); // Reset with new mean // ?
                     
                 // optim.set_solutions(new_population); // You may need to implement this in your optimizer if not present
-                std::cout << "[CMA-ES] Population reset to best validation weights." << std::endl;
+                // std::cout << "[CMA-ES] Population reset to best validation weights." << std::endl;
             }
         }
         
