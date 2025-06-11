@@ -17,9 +17,11 @@ int main(int argc, char *argv[])
 {
     const std::vector<int> topology = {86, 32, 16, 1};
     const int batch_size = 50;
-    const std::string test_problem_file = "learn_3k_and_test.json";
 
-    const std::string validate_problem_file = "validate_13k.json"; // copy of learn_1k_and_test.json for now
+    const std::string test_run_name = "OLD/learn_3k_and_test";
+    const std::string test_problem_file = test_run_name + ".json";
+
+    const std::string validate_problem_file = "OLD/validate_13k.json"; // copy of learn_1k_and_test.json for now
 
     //only test data:
     //rnd_JT(5)_J(15)_M(5)_JO(5-10)_O(20)_OM(1-3)_test
@@ -98,22 +100,38 @@ int main(int argc, char *argv[])
         
             // 3. If improved, replace population
             if (avg_val_makespan < best_val_makespan) {
-                std::cout << "[VALIDATION] New best found! Updating CMA-ES mean." << std::endl;
-
                 best_val_makespan = avg_val_makespan;
                 best_weights = current_best_weights;
-        
-                // Replace all CMA-ES candidates with this best_weights
-                // Eigen::MatrixXd new_population(nn_weights_count, population_size); // ? maybe leave this in?
-                // for (int i = 0; i < population_size; ++i)                          // ? maybe leave this in?
-                //     new_population.col(i) = best_weights;                          // ? maybe leave this in?
                 
-                auto& solutions = optim.get_solutions();
-                solutions.set_xmean(best_weights); // Set new mean
-                // solutions.reset(); // Reset with new mean // ?
-                    
-                // optim.set_solutions(new_population); // You may need to implement this in your optimizer if not present
-                // std::cout << "[CMA-ES] Population reset to best validation weights." << std::endl;
+                try {
+                    // 1. Construct a filesystem path object.
+                    const std::filesystem::path weights_path(test_run_name + "_best_weights.csv");
+
+                    // 2. Extract the parent directory from the full path.
+                    // For "OLD/file.csv", this will be "OLD".
+                    std::filesystem::path dir_path = weights_path.parent_path();
+
+                    // 3. Create the directory if it's not empty and doesn't exist.
+                    // create_directories handles nested paths and doesn't fail if the dir already exists.
+                    if (!dir_path.empty()) {
+                        std::filesystem::create_directories(dir_path);
+                    }
+
+                    // 4. Open the file for writing. This should now succeed.
+                    std::cout << "[IO] Saving new best weights to: " << weights_path << std::endl;
+                    std::ofstream file(weights_path);
+                    if (file.is_open()) {
+                        const static Eigen::IOFormat CSVFormat(Eigen::StreamPrecision, Eigen::DontAlignCols, ", ", "\n");
+                        file << best_weights.transpose().format(CSVFormat);
+                        file.close();
+                    } else {
+                        // This error is now less likely, but kept for robustness.
+                        std::cerr << "[ERROR] Unable to open file for writing: " << weights_path << std::endl;
+                    }
+                } catch (const std::filesystem::filesystem_error& e) {
+                    // Catch potential filesystem errors (e.g., permissions).
+                    std::cerr << "[ERROR] Filesystem error: " << e.what() << std::endl;
+                }
             }
         }
         
