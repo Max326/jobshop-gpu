@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
                 
                 try {
                     // 1. Construct a filesystem path object.
-                    const std::filesystem::path weights_path(test_run_name + "_best_weights.csv");
+                    const std::filesystem::path weights_path("../data/" + test_run_name + "_best_weights.csv");
 
                     // 2. Extract the parent directory from the full path.
                     // For "OLD/file.csv", this will be "OLD".
