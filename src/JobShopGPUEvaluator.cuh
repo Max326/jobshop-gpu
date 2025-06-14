@@ -19,9 +19,9 @@ public:
     bool SetCurrentBatch(int batch_start, int batch_size);
 
     // Ewaluacja populacji wag na aktualnym batchu problemów
-    Eigen::VectorXd EvaluateCandidates(const Eigen::MatrixXd& candidates);
-
+    Eigen::VectorXd EvaluateCandidates(const Eigen::MatrixXd& candidates, const bool& validation_mode);
     
+    float EvaluateForMinMakespan(const Eigen::VectorXd& candidate_weights, int num_problems);
 
     int GetTotalNNParams() const { return nn_total_params_; }
     int GetTotalProblems() const { return cpu_problems_.size(); }

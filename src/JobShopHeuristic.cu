@@ -70,18 +70,21 @@ SolutionManager::GPUSolutions JobShopHeuristic::CPUSolution::ToGPU() const {
 	return gpuSol;
 }
 
+// TODO one stream, not new ones
+
 void JobShopHeuristic::SolveBatchNew(
 	const GPUProblem* problems,
 	const NeuralNetwork::DeviceEvaluator* evaluators,
 	GPUOperation* ops_working,
 	float* results,
-	int numProblems_per_block,	  // num FJSS problems this block will handle
-	int numWeights_total_blocks,  // total NNs, so total blocks
-	int numWeights_per_block,  // how many weights per block
-	int numBiases_per_block, // how many biases per block
+	int numProblems_per_block,		// num FJSS problems this block will handle
+	int numWeights_total_blocks, 	// total NNs, so total blocks
+	int numWeights_per_block,  		// how many weights per block
+	int numBiases_per_block, 		// how many biases per block
 	int maxOpsPerProblem,
-	cudaStream_t stream,				 // Removed default stream = 0 as it's passed from evaluator
-	int nn_total_params_for_one_network	 // <<< NEW PARAMETER
+	cudaStream_t stream,			// Removed default stream = 0 as it's passed from evaluator
+	int nn_total_params_for_one_network,
+	bool validation_mode
 ) {
 	int threads_per_block = 192;	 // This is your blockDim.x
 	int total_cuda_blocks = numWeights_total_blocks;
@@ -112,7 +115,8 @@ void JobShopHeuristic::SolveBatchNew(
 		numProblems_per_block,	// This is how many problems each block should iterate up to.
 		numWeights_per_block,	
 		numBiases_per_block,
-		maxOpsPerProblem);
+		maxOpsPerProblem,
+		validation_mode);
 
 	cudaDeviceSynchronize();
 }
@@ -222,10 +226,11 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 	const NeuralNetwork::DeviceEvaluator* evaluators,  // This points to DeviceEvaluators in global memory
 	GPUOperation* ops_working,
 	float* results,
-	int numProblemsToSolvePerBlock,	 // Renamed for clarity (was numProblems)
+	int total_problems_in_batch,	 // Renamed for clarity (was numProblems)
 	int numWeights_per_block,	
 	int	numBiases_per_block,
-	int maxOpsPerProblem) {
+	int maxOpsPerProblem,
+	bool validation_mode) {
 
 	// Combined dynamic shared memory
 	extern __shared__ float shared_block_data[];
@@ -268,14 +273,45 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 
 	__syncthreads();  // IMPORTANT: Ensure all threads finish loading before any thread proceeds
 
+	int problem_idx_to_solve = -1;
+
+	if (validation_mode) {
+        // --- VALIDATION PATH: Grid-wide indexing ---
+        // Each thread across the entire grid gets a unique problem from the large 10k batch.
+        int global_thread_idx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (global_thread_idx < total_problems_in_batch) {
+            problem_idx_to_solve = global_thread_idx;
+        }
+    } else {
+        // --- TRAINING PATH: Original block-local indexing ---
+        // Each thread solves a problem from the small batch of 50.
+        // All blocks solve the SAME set of 50 problems.
+        int problemIdxInBlock = threadIdx.x;
+        if (problemIdxInBlock < total_problems_in_batch) {
+            problem_idx_to_solve = problemIdxInBlock;
+        }
+    }
+
 	// --- Main problem-solving logic ---
 	float makespan_val = 0.0f;	// Changed variable name to avoid conflict
-	// numProblemsToSolvePerBlock is the number of FJSS problems this block is responsible for
-	if(problemIdxInBlock < numProblemsToSolvePerBlock) {
-		const GPUProblem problem = problems[problemIdxInBlock];	 // Assuming 'problems' array is correctly indexed for the batch
+	if(problem_idx_to_solve != -1) {
+		const GPUProblem problem = problems[problem_idx_to_solve];	 // Assuming 'problems' array is correctly indexed for the batch
 
 		// local_ops indexing seems correct from your previous structure
-		const int base_op_idx = (weightSet * numProblemsToSolvePerBlock + problemIdxInBlock) * maxOpsPerProblem;
+		// const int base_op_idx = (weightSet * total_problems_in_batch + problem_idx_to_solve) * maxOpsPerProblem;
+
+		int base_op_idx;
+		if (validation_mode) {
+			// VALIDATION: The 'ops_working' buffer contains 192 copies of the problem set.
+			// We will only use the FIRST copy (the one for candidate 0).
+			// The index is based ONLY on the globally unique problem ID this thread is solving.
+			base_op_idx = problem_idx_to_solve * maxOpsPerProblem; // TODO check if this is correct
+		} else {
+			// TRAINING: The original logic is correct here. Each block (weightSet) uses its
+			// own distinct segment of the buffer for the 50-problem training batch.
+			base_op_idx = (weightSet * total_problems_in_batch + problem_idx_to_solve) * maxOpsPerProblem;
+		}
+
 		GPUOperation* local_ops = &ops_working[base_op_idx];
 
 		unsigned short int unscheduledOps = 0; // validation
@@ -402,7 +438,7 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 			if(bestJobID == -1) break;
 
 			// Debug: Score print
-			// if(weightSet == 0 && problemIdxInBlock == 0 && threadIdx.x == 0 && bestJobID == 0 && bestOpID == 0) {
+			// if(weightSet == 0 && problem_idx_to_solve == 0 && threadIdx.x == 0 && bestJobID == 0 && bestOpID == 0) {
 			// 	printf("[DEBUG] Initial Score=%.2f\n", bestScoreValue);
 			// }
 
@@ -434,8 +470,9 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 			if(endTime > current_local_makespan) current_local_makespan = endTime;
 			scheduled_any = true;
 		} while(scheduled_any);
+
 		makespan_val = static_cast<float>(current_local_makespan);
-		shared_makespans[problemIdxInBlock] = makespan_val;
+		shared_makespans[threadIdx.x] = makespan_val;
 
 		if (unscheduledOps != 0) {
 			// Debug: Print problem details if there are unscheduled operations
@@ -444,24 +481,40 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 
 	} else {
 		// Threads outside the numProblemsToSolvePerBlock range (e.g. if blockDim.x > numProblemsToSolvePerBlock)
-		shared_makespans[problemIdxInBlock] = 0.0f;
+		shared_makespans[threadIdx.x] = 0.0f;
 	}
 
 	__syncthreads();
 
 	// Reduction to calculate average makespan for this weightSet (block)
-	if(threadIdx.x == 0) {
-		float sum = 0.0f;
-		for(int i = 0; i < numProblemsToSolvePerBlock; ++i) {  // Iterate up to actual problems solved
-			sum += shared_makespans[i];
-		}
-		if(numProblemsToSolvePerBlock > 0) {
-			results[weightSet] = sum / numProblemsToSolvePerBlock;
-		} else {
-			results[weightSet] = 0.0f;
-		}
-		// printf("[KERNEL] weightSet= %d, \t avg makespan= %.2f\n", weightSet, results[weightSet]);  // Keep for debug if needed
-	}
+	if (threadIdx.x == 0) {
+        if (validation_mode) {
+            // VALIDATION: Find the minimum makespan among problems solved by this block's threads
+            float min_makespan = FLT_MAX;
+            int problems_in_this_block = 0;
+            if (blockIdx.x < gridDim.x - 1) {
+                problems_in_this_block = blockDim.x;
+            } else {
+                problems_in_this_block = total_problems_in_batch - (blockIdx.x * blockDim.x);
+            }
+
+            for (int i = 0; i < problems_in_this_block; ++i) {
+                if (shared_makespans[i] > 0.0f) { // Only consider valid makespans
+                    min_makespan = fminf(min_makespan, shared_makespans[i]);
+                }
+            }
+            results[weightSet] = (min_makespan == FLT_MAX) ? 0.0f : min_makespan;
+
+        } else {
+            // TRAINING: Calculate the average makespan over the 50 problems
+            float sum = 0.0f;
+            // total_problems_in_batch will be 50 here.
+            for (int i = 0; i < total_problems_in_batch; ++i) {
+                sum += shared_makespans[i];
+            }
+            results[weightSet] = (total_problems_in_batch > 0) ? (sum / total_problems_in_batch) : 0.0f;
+        }
+    }
 }
 
 // Print problem details from device (for debugging)

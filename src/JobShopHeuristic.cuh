@@ -84,7 +84,8 @@ public:
         int numBiases_per_block, 
         int maxOpsPerProblem,
         cudaStream_t stream,
-        int nn_total_params_for_one_network
+        int nn_total_params_for_one_network,
+        bool validation_mode
     );
 
     void PrintSchedule(const CPUSolution& solution, JobShopData data);
@@ -110,7 +111,8 @@ __global__ void SolveManyWeightsKernel(
     int numProblemsToSolvePerBlock,
     int numWeights_per_block,	
 	int	numBiases_per_block,
-    int maxOpsPerProblem
+    int maxOpsPerProblem,
+    bool validation_mode
 );
 
 __device__ void PrintProblemDetails(const GPUProblem& problem);
