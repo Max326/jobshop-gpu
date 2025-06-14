@@ -226,7 +226,6 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 	int numWeights_per_block,	
 	int	numBiases_per_block,
 	int maxOpsPerProblem) {
-	// if(gpu_error_flag) { return; } // Re-enable if needed, but you said removing checks helped
 
 	// Combined dynamic shared memory
 	extern __shared__ float shared_block_data[];
@@ -242,28 +241,11 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 	// --- Load NN Parameters into Shared Memory ---
 	const NeuralNetwork::DeviceEvaluator& nn_eval_global_ptr = evaluators[weightSet];  // Get the evaluator for this block
 
-	// Calculate total weights and biases for this NN
-	// This must be done by all threads or broadcast, as it's needed for shared mem partitioning
-	
-	//* int numWeights_per_block = numWeights_per_block;
-	//* int numBiases_per_block = numBiases_per_block;
-
-	// if(nn_eval_global_ptr.num_layers > 0) {
-	// 	for(int i = 1; i < nn_eval_global_ptr.num_layers; ++i) {
-	// 		numWeights_per_block += nn_eval_global_ptr.d_topology[i - 1] * nn_eval_global_ptr.d_topology[i];
-	// 		numBiases_per_block += nn_eval_global_ptr.d_topology[i];
-	// 	}
-	// }
-	// else: handle error or assume valid if pre-checked
-
 	// Partition 2: Storage for NN weights for this block (starts after shared_makespans)
 	float* sm_weights = shared_block_data + blockDim.x;
 
 	// Partition 3: Storage for NN biases for this block (starts after sm_weights)
 	float* sm_biases = shared_block_data + blockDim.x + numWeights_per_block;
-
-	// Cooperatively load NN parameters from global to shared memory
-	// nn_eval_global_ptr.weights and nn_eval_global_ptr.biases point to global device memory
 	
 	// Load weights cooperatively and coalesced
 	// Calculate how many elements each thread might load in total passes
@@ -284,10 +266,6 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 		}
 	}
 
-	// for (int idx = threadIdx.x; idx < numBiases_per_block; idx += blockDim.x) {
-	// 	sm_biases[idx] = nn_eval_global_ptr.biases[idx];
-	// }
-
 	__syncthreads();  // IMPORTANT: Ensure all threads finish loading before any thread proceeds
 
 	// --- Main problem-solving logic ---
@@ -300,7 +278,6 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 		const int base_op_idx = (weightSet * numProblemsToSolvePerBlock + problemIdxInBlock) * maxOpsPerProblem;
 		GPUOperation* local_ops = &ops_working[base_op_idx];
 
-		// ... (rest of your existing problem setup: jobScheduledOps, machine_times, etc. from JobShopHeuristic.cu[6]) ...
 		unsigned short int unscheduledOps = 0; // validation
 
 		unsigned short int jobScheduledOps[MAX_JOBS] = {0};
@@ -325,7 +302,7 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 		}
 
 		
-		int current_local_makespan = 0;	 // Renamed to avoid conflict
+		int current_local_makespan = 0;
 		bool scheduled_any;
 		do {
 			scheduled_any = false;
@@ -410,12 +387,6 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 
 
 						float score = nn_eval_global_ptr.Evaluate(features, sm_weights, sm_biases);
-						// float score2 = nn_eval_global_ptr.Evaluate(features); // For debug
-
-						// if (score != score2) {
-						// 	printf("[KERNEL] Score mismatch: %f vs %f\n", score, score2);
-						// 	return;
-						// }
 
 						if(score > bestScoreValue) {
 							bestScoreValue = score;

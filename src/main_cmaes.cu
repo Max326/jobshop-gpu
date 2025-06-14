@@ -48,9 +48,6 @@ int main(int argc, char *argv[])
     cmaparams.set_sep();
     cmaparams.set_algo(sepaCMAES);
     
-    //const uint64_t fixed_seed = 12345; // Choose any constant value
-    //CMAParameters<> cmaparams(x0, sigma, population_size, fixed_seed);
-
     FitFunc eval = [](const double *x, const int N) -> double { return 0.0; }; //:0
     ESOptimizer<customCMAStrategy,CMAParameters<>> optim(eval, cmaparams);//:0
 
@@ -108,7 +105,6 @@ int main(int argc, char *argv[])
                     const std::filesystem::path weights_path("../data/" + test_run_name + "_best_weights.csv");
 
                     // 2. Extract the parent directory from the full path.
-                    // For "OLD/file.csv", this will be "OLD".
                     std::filesystem::path dir_path = weights_path.parent_path();
 
                     // 3. Create the directory if it's not empty and doesn't exist.
@@ -136,6 +132,5 @@ int main(int argc, char *argv[])
         }
         
     }
-    //std::cout << optim.get_solutions() << std::endl;//:0
     return 0;
 }
