@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
     const std::vector<int> topology = {86, 32, 16, 1};
     const int batch_size = 50;
     const int train_problem_count = 3100;
-    const int validation_problem_count = 50; // TODO change to 10k!!! when file is ready
+    const int validation_problem_count = 1000; // TODO change to 10k!!! when file is ready
 
 
     const std::string test_run_name = "OLD/learn_3k_and_test";

@@ -472,17 +472,19 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 		} while(scheduled_any);
 
 		makespan_val = static_cast<float>(current_local_makespan);
-		shared_makespans[threadIdx.x] = makespan_val;
-
+		
 		if (unscheduledOps != 0) {
 			// Debug: Print problem details if there are unscheduled operations
 			printf("[KERNEL] Unscheduled operations remaining: %d\n", unscheduledOps);
 		}
+	} 
+	
+	shared_makespans[threadIdx.x] = makespan_val;
 
-	} else {
-		// Threads outside the numProblemsToSolvePerBlock range (e.g. if blockDim.x > numProblemsToSolvePerBlock)
-		shared_makespans[threadIdx.x] = 0.0f;
-	}
+	// else {
+	// 	// Threads outside the numProblemsToSolvePerBlock range (e.g. if blockDim.x > numProblemsToSolvePerBlock)
+	// 	shared_makespans[threadIdx.x] = 0.0f;
+	// }
 
 	__syncthreads();
 
@@ -503,7 +505,8 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
                     min_makespan = fminf(min_makespan, shared_makespans[i]);
                 }
             }
-            results[weightSet] = (min_makespan == FLT_MAX) ? 0.0f : min_makespan;
+            // results[weightSet] = (min_makespan == FLT_MAX) ? 0.0f : min_makespan;
+			results[weightSet] = min_makespan;
 
         } else {
             // TRAINING: Calculate the average makespan over the 50 problems
