@@ -27,7 +27,7 @@ Makefile
 
 .vscode/
 .idea/
-
+venv
 *.cubin
 *.ptx
 *.fatbin
