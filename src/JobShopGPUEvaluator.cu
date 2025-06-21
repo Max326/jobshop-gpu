@@ -238,42 +238,52 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
     auto t2 = std::chrono::high_resolution_clock::now();
 
     // 2. Asynchronous Memory Transfer: Copy all weights and biases in single calls
-    cudaStream_t stream; // Get the stream (assuming this is a member variable now)
+    cudaStream_t stream;
     cudaStreamCreate(&stream);
     CUDA_CHECK(cudaMemcpyAsync(d_all_candidate_weights_, h_pinned_all_weights_, total_weights_size_, cudaMemcpyHostToDevice, stream));
     CUDA_CHECK(cudaMemcpyAsync(d_all_candidate_biases_, h_pinned_all_biases_, total_biases_size_, cudaMemcpyHostToDevice, stream));
 
     // Launch the pointer update kernel
-    int threadsPerBlock = 128; // Adjust as needed
+    int threadsPerBlock = 128;
     int blocks = (nn_candidate_count + threadsPerBlock - 1) / threadsPerBlock;
     UpdateEvaluatorPointersKernel<<<blocks, threadsPerBlock, 0, stream>>>(
         d_evaluators_,
         d_all_candidate_weights_,
         d_all_candidate_biases_,
-        nn_total_weights_per_network_, // Already a class member
-        nn_total_biases_per_network_,  // Already a class member
+        nn_total_weights_per_network_,
+        nn_total_biases_per_network_,
         nn_candidate_count
     );
 
     auto t3 = std::chrono::high_resolution_clock::now();
 
-    auto t4 = std::chrono::high_resolution_clock::now();
-
     float* d_results = nullptr;
-    CUDA_CHECK(cudaMalloc(&d_results, sizeof(float) * nn_candidate_count));
+    int result_count = nn_candidate_count;
+    if (validation_mode) result_count = 1; // tylko jeden kandydat
+
+    CUDA_CHECK(cudaMalloc(&d_results, sizeof(float) * result_count));
 
     // Kernel
     auto t5 = std::chrono::high_resolution_clock::now();
 
+    int kernel_blocks, kernel_threads;
+    if (validation_mode) {
+        kernel_threads = 256; // lub inna wielokrotność 32, np. 512
+        kernel_blocks = (num_problems_to_evaluate_ + kernel_threads - 1) / kernel_threads;
+    } else {
+        kernel_blocks = nn_candidate_count_;
+        kernel_threads = 192;
+    }
+
     JobShopHeuristic::SolveBatchNew(
-        d_problems_, d_evaluators_, d_ops_working_, d_results, // USE THE CLASS MEMBER d_ops_working_
-        num_problems_to_evaluate_, // This is numProblems_per_block for the kernel
-        nn_candidate_count_, // This is numWeights_total_blocks for the kernel
-        nn_total_weights_per_network_, // <<< Pass the total weights for one NN here
-        nn_total_biases_per_network_, // <<< Pass the total biases for one NN here
+        d_problems_, d_evaluators_, d_ops_working_, d_results,
+        num_problems_to_evaluate_,
+        kernel_blocks,
+        nn_total_weights_per_network_,
+        nn_total_biases_per_network_,
         max_ops_per_problem_,
-        stream, // Pass the stream
-        nn_total_params_, // <<< Pass the total parameters for one NN here
+        stream,
+        nn_total_params_,
         validation_mode
     );
 
@@ -281,13 +291,13 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
 
     auto t6 = std::chrono::high_resolution_clock::now();
 
-    std::vector<float> host_results(nn_candidate_count);
-    CUDA_CHECK(cudaMemcpy(host_results.data(), d_results, sizeof(float) * nn_candidate_count, cudaMemcpyDeviceToHost));
+    std::vector<float> host_results(result_count);
+    CUDA_CHECK(cudaMemcpy(host_results.data(), d_results, sizeof(float) * result_count, cudaMemcpyDeviceToHost));
 
     auto t7 = std::chrono::high_resolution_clock::now();
 
-    Eigen::VectorXd fvalues(nn_candidate_count);
-    for (int r = 0; r < nn_candidate_count; ++r)
+    Eigen::VectorXd fvalues(result_count);
+    for (int r = 0; r < result_count; ++r)
         fvalues[r] = static_cast<double>(host_results[r]);
 
     auto t8 = std::chrono::high_resolution_clock::now();
@@ -299,8 +309,6 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
         << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() << " ms, "
         << "DeviceEvaluator H2D: "
         << std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2).count() << " ms, "
-        << "ops_working memcpy: "
-        << std::chrono::duration_cast<std::chrono::milliseconds>(t4 - t3).count() << " ms, "
         << "Kernel launch+wait: "
         << std::chrono::duration_cast<std::chrono::milliseconds>(t6 - t5).count() << " ms, "
         << "Results D2H: "
@@ -315,30 +323,29 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
 }
 
 float JobShopGPUEvaluator::EvaluateForMinMakespan(const Eigen::VectorXd& candidate_weights, int num_problems) {
-    // 1. Set the evaluator to use the specified number of validation problems.
-    if (!SetCurrentBatch(0, num_problems)) {
-        std::cerr << "[ERROR] Could not set batch for validation." << std::endl;
-        return std::numeric_limits<float>::max();
+    const int val_batch_size = 1000;
+    int num_batches = (num_problems + val_batch_size - 1) / val_batch_size;
+    float makespan_sum = 0.0f;
+    int makespan_count = 0;
+
+    for (int batch = 0; batch < num_batches; ++batch) {
+        int batch_start = batch * val_batch_size;
+        int batch_size = std::min(val_batch_size, num_problems - batch_start);
+
+        if (!SetCurrentBatch(batch_start, batch_size)) {
+            std::cerr << "[ERROR] Could not set batch for validation." << std::endl;
+            continue;
+        }
+
+        Eigen::MatrixXd replicated_candidate_matrix(nn_total_params_, 1); // 1 candidate
+        replicated_candidate_matrix.col(0) = candidate_weights;
+        Eigen::VectorXd result_vector = EvaluateCandidates(replicated_candidate_matrix, true);
+
+        makespan_sum += result_vector[0];
+        makespan_count++;
     }
 
-    // 2. Prepare a weight matrix with 192 IDENTICAL columns.
-    // This "tricks" the evaluator into using all 192 blocks for one network.
-    Eigen::MatrixXd replicated_candidate_matrix(nn_total_params_, nn_candidate_count_);
-    for (int i = 0; i < nn_candidate_count_; ++i) {
-        replicated_candidate_matrix.col(i) = candidate_weights;
-    }
-
-    // 3. Evaluate all 192 (identical) candidates on the GPU.
-    // The existing EvaluateCandidates function will now correctly distribute
-    // the 'num_problems' across all 'nn_candidate_count_' (192) blocks.
-    Eigen::VectorXd result_vector = EvaluateCandidates(replicated_candidate_matrix, true);
-
-    // 4. Find the minimum makespan from the results of all blocks.
-    // Each element of result_vector is the min makespan from one block's subset of problems.
-    // We need the overall minimum.
-    if (result_vector.size() > 0) {
-        return result_vector.minCoeff();
-    }
-
-    return std::numeric_limits<float>::max(); // Return max float on error
+    if (makespan_count > 0)
+        return makespan_sum / makespan_count;
+    return std::numeric_limits<float>::max();
 }

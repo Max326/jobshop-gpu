@@ -73,52 +73,49 @@ SolutionManager::GPUSolutions JobShopHeuristic::CPUSolution::ToGPU() const {
 // TODO one stream, not new ones
 
 void JobShopHeuristic::SolveBatchNew(
-	const GPUProblem* problems,
-	const NeuralNetwork::DeviceEvaluator* evaluators,
-	GPUOperation* ops_working,
-	float* results,
-	int numProblems_per_block,		// num FJSS problems this block will handle
-	int numWeights_total_blocks, 	// total NNs, so total blocks
-	int numWeights_per_block,  		// how many weights per block
-	int numBiases_per_block, 		// how many biases per block
-	int maxOpsPerProblem,
-	cudaStream_t stream,			// Removed default stream = 0 as it's passed from evaluator
-	int nn_total_params_for_one_network,
-	bool validation_mode
+    const GPUProblem* problems,
+    const NeuralNetwork::DeviceEvaluator* evaluators,
+    GPUOperation* ops_working,
+    float* results,
+    int numProblems_per_block,
+    int numWeights_total_blocks,
+    int numWeights_per_block,
+    int numBiases_per_block,
+    int maxOpsPerProblem,
+    cudaStream_t stream,
+    int nn_total_params_for_one_network,
+    bool validation_mode
 ) {
-	int threads_per_block = 192;	 // This is your blockDim.x
-	int total_cuda_blocks = numWeights_total_blocks;
+    int threads_per_block, total_cuda_blocks;
 
-	// Calculate dynamic shared memory size:
-	// (threads_per_block * sizeof(float) for shared_makespans)
-	// + (nn_total_params_for_one_network * sizeof(float) for combined weights & biases of ONE network)
-	size_t dynamic_shared_mem_size = (threads_per_block * sizeof(float)) + (nn_total_params_for_one_network * sizeof(float));
+    if (validation_mode) {
+        // Każdy wątek obsługuje jeden problem walidacyjny, jeden blok wystarczy (lub więcej jeśli batch > 1024)
+        threads_per_block = 256;
+        total_cuda_blocks = (numProblems_per_block + threads_per_block - 1) / threads_per_block;
+        numWeights_per_block = numWeights_per_block; // dla 1 kandydata
+        numBiases_per_block = numBiases_per_block;
+    } else {
+        threads_per_block = 192;
+        total_cuda_blocks = numWeights_total_blocks;
+    }
 
-	// cudaDeviceProp deviceProp;
-	// cudaGetDeviceProperties(&deviceProp, 0);
-	// size_t maxSharedMemoryPerBlock = deviceProp.sharedMemPerBlock;
+    size_t dynamic_shared_mem_size = (threads_per_block * sizeof(float)) + (nn_total_params_for_one_network * sizeof(float));
 
-	// if (dynamic_shared_mem_size > maxSharedMemoryPerBlock) {
-	// 	printf("ERROR: Requested shared memory (%zu) exceeds maximum (%zu)\n", dynamic_shared_mem_size, maxSharedMemoryPerBlock);
-	// 	return;
-	// }
+    cudaDeviceSetLimit(cudaLimitStackSize, 4096);
 
-	cudaDeviceSetLimit(cudaLimitStackSize, 4096);
-	// int reset_value = 0; // If gpu_error_flag is used
-	// cudaMemcpyToSymbol(gpu_error_flag, &reset_value, sizeof(int), 0, cudaMemcpyHostToDevice);
+    SolveManyWeightsKernel<<<total_cuda_blocks, threads_per_block, dynamic_shared_mem_size, stream>>>(
+        problems,
+        evaluators,
+        ops_working,
+        results,
+        numProblems_per_block,
+        numWeights_per_block,
+        numBiases_per_block,
+        maxOpsPerProblem,
+        validation_mode
+    );
 
-	__launch_bounds__(192, 4) SolveManyWeightsKernel<<<total_cuda_blocks, threads_per_block, dynamic_shared_mem_size, stream>>>(
-		problems,
-		evaluators,
-		ops_working,
-		results,
-		numProblems_per_block,	// This is how many problems each block should iterate up to.
-		numWeights_per_block,	
-		numBiases_per_block,
-		maxOpsPerProblem,
-		validation_mode);
-
-	cudaDeviceSynchronize();
+    cudaDeviceSynchronize();
 }
 
 // Allocate GPU memory for solutions
@@ -221,16 +218,16 @@ void JobShopHeuristic::UpdateSchedule(JobShopData& data, int jobId, int operatio
 	solution.makespan = std::max(solution.makespan, endTime);
 }
 
-__global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
-	const GPUProblem* problems,
-	const NeuralNetwork::DeviceEvaluator* evaluators,  // This points to DeviceEvaluators in global memory
-	GPUOperation* ops_working,
-	float* results,
-	int total_problems_in_batch,	 // Renamed for clarity (was numProblems)
-	int numWeights_per_block,	
-	int	numBiases_per_block,
-	int maxOpsPerProblem,
-	bool validation_mode) {
+__global__ void SolveManyWeightsKernel(
+    const GPUProblem* problems,
+    const NeuralNetwork::DeviceEvaluator* evaluators,
+    GPUOperation* ops_working,
+    float* results,
+    int total_problems_in_batch,
+    int numWeights_per_block,
+    int numBiases_per_block,
+    int maxOpsPerProblem,
+    bool validation_mode) {
 
 	// Combined dynamic shared memory
 	extern __shared__ float shared_block_data[];
@@ -274,28 +271,21 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 	__syncthreads();  // IMPORTANT: Ensure all threads finish loading before any thread proceeds
 
 	int problem_idx_to_solve = -1;
+    int global_thread_idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-	if (validation_mode) {
-        // --- VALIDATION PATH: Grid-wide indexing ---
-        // Each thread across the entire grid gets a unique problem from the large 10k batch.
-        int global_thread_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (validation_mode) {
         if (global_thread_idx < total_problems_in_batch) {
             problem_idx_to_solve = global_thread_idx;
         }
     } else {
-        // --- TRAINING PATH: Original block-local indexing ---
-        // Each thread solves a problem from the small batch of 50.
-        // All blocks solve the SAME set of 50 problems.
-        int problemIdxInBlock = threadIdx.x;
         if (problemIdxInBlock < total_problems_in_batch) {
             problem_idx_to_solve = problemIdxInBlock;
         }
     }
 
-	// --- Main problem-solving logic ---
-	float makespan_val = 0.0f;	// Changed variable name to avoid conflict
-	if(problem_idx_to_solve != -1) {
-		const GPUProblem problem = problems[problem_idx_to_solve];	 // Assuming 'problems' array is correctly indexed for the batch
+	float makespan_val = 0.0f;
+    if(problem_idx_to_solve != -1) {
+        const GPUProblem problem = problems[problem_idx_to_solve];	 // Assuming 'problems' array is correctly indexed for the batch
 
 		// local_ops indexing seems correct from your previous structure
 		// const int base_op_idx = (weightSet * total_problems_in_batch + problem_idx_to_solve) * maxOpsPerProblem;
@@ -479,39 +469,17 @@ __global__ __launch_bounds__(192, 4) void SolveManyWeightsKernel(
 		}
 	} 
 	
-	shared_makespans[threadIdx.x] = makespan_val;
+	if (validation_mode) {
+        // Każdy wątek zapisuje swój wynik do results[global_thread_idx]
+        if (problem_idx_to_solve != -1) {
+            results[problem_idx_to_solve] = makespan_val;
+        }
+    } else {
+        shared_makespans[threadIdx.x] = makespan_val;
+        __syncthreads();
 
-	// else {
-	// 	// Threads outside the numProblemsToSolvePerBlock range (e.g. if blockDim.x > numProblemsToSolvePerBlock)
-	// 	shared_makespans[threadIdx.x] = 0.0f;
-	// }
-
-	__syncthreads();
-
-	// Reduction to calculate average makespan for this weightSet (block)
-	if (threadIdx.x == 0) {
-        if (validation_mode) {
-            // VALIDATION: Find the minimum makespan among problems solved by this block's threads
-            float min_makespan = FLT_MAX;
-            int problems_in_this_block = 0;
-            if (blockIdx.x < gridDim.x - 1) {
-                problems_in_this_block = blockDim.x;
-            } else {
-                problems_in_this_block = total_problems_in_batch - (blockIdx.x * blockDim.x);
-            }
-
-            for (int i = 0; i < problems_in_this_block; ++i) {
-                if (shared_makespans[i] > 0.0f) { // Only consider valid makespans
-                    min_makespan = fminf(min_makespan, shared_makespans[i]);
-                }
-            }
-            // results[weightSet] = (min_makespan == FLT_MAX) ? 0.0f : min_makespan;
-			results[weightSet] = min_makespan;
-
-        } else {
-            // TRAINING: Calculate the average makespan over the 50 problems
+        if (threadIdx.x == 0) {
             float sum = 0.0f;
-            // total_problems_in_batch will be 50 here.
             for (int i = 0; i < total_problems_in_batch; ++i) {
                 sum += shared_makespans[i];
             }
