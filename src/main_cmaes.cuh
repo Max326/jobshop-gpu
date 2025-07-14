@@ -15,7 +15,7 @@ JobShopGPUEvaluator* g_gpu_test_evaluator = nullptr;
 float best_val_makespan = std::numeric_limits<float>::max();
 Eigen::VectorXd best_weights; 
 
-int main(int argc, char *argv[])
+int main_cmaes(const std::string train_problem_file, const std::string validate_problem_file, const std::string test_problem_file)
 {
     // --- CONFIG ---
     const std::vector<int> topology = {86, 32, 16, 1};
@@ -24,9 +24,9 @@ int main(int argc, char *argv[])
     const int validation_problem_count = 10000; 
     const int test_problem_count = 100;
 
-    const std::string train_problem_file = "TRAIN/rnd_JT(5)_J(15)_M(5)_JO(10-15)_O(20)_OM(2-5)_total.json"; // used to be test_problem_file
-    const std::string validate_problem_file = "VALID/rnd_JT(5)_J(15)_M(5)_JO(10-15)_O(20)_OM(2-5)_validation.json";
-    const std::string test_problem_file = "TEST/rnd_JT(5)_J(15)_M(5)_JO(10-15)_O(20)_OM(2-5)_test.json"; 
+    // const std::string train_problem_file = "TRAIN/rnd_JT(5)_J(15)_M(5)_JO(10-15)_O(20)_OM(2-5)_total.json"; // used to be test_problem_file
+    // const std::string validate_problem_file = "VALID/rnd_JT(5)_J(15)_M(5)_JO(10-15)_O(20)_OM(2-5)_validation.json";
+    // const std::string test_problem_file = "TEST/rnd_JT(5)_J(15)_M(5)_JO(10-15)_O(20)_OM(2-5)_test.json"; 
 
     int population_size = 192;//:0
 
