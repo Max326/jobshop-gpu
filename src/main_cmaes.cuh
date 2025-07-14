@@ -51,7 +51,7 @@ int main_cmaes(const std::string train_problem_file, const std::string validate_
         g_gpu_train_evaluator = &gpu_evaluator;
 
         int batch_start = 0;
-        while (!optim.stop() && batch_start < to_load && gpu_evaluator.SetCurrentBatch(batch_start, batch_size)) {
+        while (batch_start < to_load && gpu_evaluator.SetCurrentBatch(batch_start, batch_size)) {
             dMat candidates = optim.ask();//:0
             optim.eval(candidates);//:0
             optim.tell();//:0
