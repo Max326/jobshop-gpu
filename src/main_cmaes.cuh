@@ -15,7 +15,7 @@ JobShopGPUEvaluator* g_gpu_test_evaluator = nullptr;
 float best_val_makespan = std::numeric_limits<float>::max();
 Eigen::VectorXd best_weights; 
 
-int main_cmaes(const std::string train_problem_file, const std::string validate_problem_file, const std::string test_problem_file)
+int main_cmaes(const std::string train_problem_file, const std::string validate_problem_file, const std::string test_problem_file, const int max_loaded_problems)
 {
     // --- CONFIG ---
     const std::vector<int> topology = {86, 32, 16, 1};
@@ -24,98 +24,90 @@ int main_cmaes(const std::string train_problem_file, const std::string validate_
     const int validation_problem_count = 10000; 
     const int test_problem_count = 100;
 
-    // const std::string train_problem_file = "TRAIN/rnd_JT(5)_J(15)_M(5)_JO(10-15)_O(20)_OM(2-5)_total.json"; // used to be test_problem_file
-    // const std::string validate_problem_file = "VALID/rnd_JT(5)_J(15)_M(5)_JO(10-15)_O(20)_OM(2-5)_validation.json";
-    // const std::string test_problem_file = "TEST/rnd_JT(5)_J(15)_M(5)_JO(10-15)_O(20)_OM(2-5)_test.json"; 
-
-    int population_size = 192;//:0
-
-    int nn_weights_count = NeuralNetwork::CalculateTotalParameters(topology);//:0
-
-    JobShopGPUEvaluator gpu_evaluator(train_problem_file, topology, population_size, train_problem_count);
-    g_gpu_train_evaluator = &gpu_evaluator;
-
-    g_gpu_validate_evaluator = new JobShopGPUEvaluator(validate_problem_file, topology, population_size, validation_problem_count);
-
+    int population_size = 192;
+    int nn_weights_count = NeuralNetwork::CalculateTotalParameters(topology);
     std::vector<double> x0(nn_weights_count, 0.0);
-
-    double sigma = 0.1;//:0
-    CMAParameters<> cmaparams(x0, sigma, population_size);//:0  
+    double sigma = 0.1;
+    CMAParameters<> cmaparams(x0, sigma, population_size);  
     cmaparams.set_sep();
     cmaparams.set_algo(sepaCMAES);
-    
-    FitFunc eval = [](const double *x, const int N) -> double { return 0.0; }; //:0
-    ESOptimizer<customCMAStrategy,CMAParameters<>> optim(eval, cmaparams);//:0
+
+    FitFunc eval = [](const double *x, const int N) -> double { return 0.0; };
+    ESOptimizer<customCMAStrategy,CMAParameters<>> optim(eval, cmaparams);
 
     std::ofstream train_makespan_file("best_train_makespans.csv");
     std::ofstream val_makespan_file("best_val_makespans.csv");
     train_makespan_file << "iteration,best_train_avg_makespan\n";
     val_makespan_file << "iteration,val_avg_makespan\n";
 
-    int batch_start = 0;
-    int global_iter=0;
+    int global_iter = 0;
+    int problems_processed = 0;
 
-    // --- TRAIN  ---
-    while(!optim.stop() && gpu_evaluator.SetCurrentBatch(batch_start, batch_size)) {
-        dMat candidates = optim.ask();//:0
-        optim.eval(candidates);//:0
-        optim.tell();//:0
-        optim.inc_iter();//:0
+    while (problems_processed < train_problem_count) {
+        int to_load = std::min(max_loaded_problems, train_problem_count - problems_processed);
 
-        train_makespan_file << global_iter << "," << optim.get_best_fvalue() << "\n";
-        train_makespan_file.flush();
+        // TODO memory allocation outside of the loop
+        JobShopGPUEvaluator gpu_evaluator(train_problem_file, topology, population_size, train_problem_count, problems_processed, to_load);
+        g_gpu_train_evaluator = &gpu_evaluator;
 
-        batch_start += batch_size;
-        global_iter++;
-        
-        std::cout << "Global iterations: " << global_iter << std::endl;
+        int batch_start = 0;
+        while (!optim.stop() && batch_start < to_load && gpu_evaluator.SetCurrentBatch(batch_start, batch_size)) {
+            dMat candidates = optim.ask();//:0
+            optim.eval(candidates);//:0
+            optim.tell();//:0
+            optim.inc_iter();//:0
 
-        // --- VALIDATE  ---
-        if (global_iter % 10 == 0) {
+            train_makespan_file << global_iter << "," << optim.get_best_fvalue() << "\n";
+            train_makespan_file.flush();
 
-            // 1. Get the best weights from the current training population
-            const auto& cma_weights = optim.get_solutions().best_candidate().get_x();
-            Eigen::VectorXd current_best_weights = Eigen::Map<const Eigen::VectorXd>(cma_weights.data(), cma_weights.size());
+            batch_start += batch_size;
+            global_iter++;
 
-            // 2. Evaluate this candidate on 10,000 problems to get the average makespan
-            std::cout << "[VALIDATION] Iter " << global_iter 
-                    << ": Running validation on " << validation_problem_count << " problems..." << std::endl;
+            std::cout << "Global iterations: " << global_iter << std::endl;
 
-            float avg_val_makespan = g_gpu_validate_evaluator->EvaluateForMinMakespan(current_best_weights, validation_problem_count);
+            // --- VALIDATE  ---
+            if (global_iter % 10 == 0) {
+                const auto& cma_weights = optim.get_solutions().best_candidate().get_x();
+                Eigen::VectorXd current_best_weights = Eigen::Map<const Eigen::VectorXd>(cma_weights.data(), cma_weights.size());
 
-            std::cout << "[VALIDATION] Average makespan = " << avg_val_makespan
-                    << " (best so far: " << best_val_makespan << ")" << std::endl;
+                std::cout << "[VALIDATION] Iter " << global_iter 
+                        << ": Running validation on " << validation_problem_count << " problems..." << std::endl;
 
-            val_makespan_file << global_iter << "," << avg_val_makespan << "\n";
-            val_makespan_file.flush();
+                float avg_val_makespan = g_gpu_validate_evaluator->EvaluateForMinMakespan(current_best_weights, validation_problem_count);
 
-            // 3. If it's a new global best, save the weights
-            if (avg_val_makespan < best_val_makespan) {
-                std::cout << "[VALIDATION] New best network found!" << std::endl;
-                best_val_makespan = avg_val_makespan;
-                best_weights = current_best_weights;
+                std::cout << "[VALIDATION] Average makespan = " << avg_val_makespan
+                        << " (best so far: " << best_val_makespan << ")" << std::endl;
 
-                // --- Best weights ---
-                try {
-                    const std::filesystem::path weights_path("best_weights.csv");
-                    std::filesystem::path dir_path = weights_path.parent_path();
-                    if (!dir_path.empty()) {
-                        std::filesystem::create_directories(dir_path);
+                val_makespan_file << global_iter << "," << avg_val_makespan << "\n";
+                val_makespan_file.flush();
+
+                if (avg_val_makespan < best_val_makespan) {
+                    std::cout << "[VALIDATION] New best network found!" << std::endl;
+                    best_val_makespan = avg_val_makespan;
+                    best_weights = current_best_weights;
+
+                    try {
+                        const std::filesystem::path weights_path("best_weights.csv");
+                        std::filesystem::path dir_path = weights_path.parent_path();
+                        if (!dir_path.empty()) {
+                            std::filesystem::create_directories(dir_path);
+                        }
+                        std::cout << "[IO] Saving new best weights to: " << weights_path << std::endl;
+                        std::ofstream file(weights_path);
+                        if (file.is_open()) {
+                            const static Eigen::IOFormat CSVFormat(Eigen::StreamPrecision, Eigen::DontAlignCols, ", ", "\n");
+                            file << best_weights.transpose().format(CSVFormat);
+                            file.close();
+                        } else {
+                            std::cerr << "[ERROR] Unable to open file for writing: " << weights_path << std::endl;
+                        }
+                    } catch (const std::filesystem::filesystem_error& e) {
+                        std::cerr << "[ERROR] Filesystem error: " << e.what() << std::endl;
                     }
-                    std::cout << "[IO] Saving new best weights to: " << weights_path << std::endl;
-                    std::ofstream file(weights_path);
-                    if (file.is_open()) {
-                        const static Eigen::IOFormat CSVFormat(Eigen::StreamPrecision, Eigen::DontAlignCols, ", ", "\n");
-                        file << best_weights.transpose().format(CSVFormat);
-                        file.close();
-                    } else {
-                        std::cerr << "[ERROR] Unable to open file for writing: " << weights_path << std::endl;
-                    }
-                } catch (const std::filesystem::filesystem_error& e) {
-                    std::cerr << "[ERROR] Filesystem error: " << e.what() << std::endl;
                 }
             }
         }
+        problems_processed += to_load;
     }
 
     train_makespan_file.close();
@@ -123,8 +115,6 @@ int main_cmaes(const std::string train_problem_file, const std::string validate_
 
     // --- TEST  ---
     try {
-        // const int test_problem_count = 100;
-
         // JobShopGPUEvaluator test_evaluator(test_problem_file, topology, population_size, test_problem_count);
         g_gpu_test_evaluator = new JobShopGPUEvaluator(test_problem_file, topology, population_size, test_problem_count);
 
@@ -148,7 +138,7 @@ int main_cmaes(const std::string train_problem_file, const std::string validate_
             std::cerr << "[ERROR] Unable to open best_test_result.csv for writing!" << std::endl;
         }
 
-/*         // Save the makespan for each task in the test set
+        /*         // Save the makespan for each task in the test set
         Eigen::MatrixXd single_candidate_matrix(best_weights.size(), 1);
         single_candidate_matrix.col(0) = best_weights;
 
