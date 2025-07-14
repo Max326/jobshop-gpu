@@ -10,6 +10,7 @@ using namespace libcmaes;
 
 JobShopGPUEvaluator* g_gpu_train_evaluator = nullptr;
 JobShopGPUEvaluator* g_gpu_validate_evaluator = nullptr;
+JobShopGPUEvaluator* g_gpu_test_evaluator = nullptr;
 
 float best_val_makespan = std::numeric_limits<float>::max();
 Eigen::VectorXd best_weights; 
@@ -21,6 +22,7 @@ int main(int argc, char *argv[])
     const int batch_size = 50;
     const int train_problem_count = 130000; //130k --> 2600 iterations
     const int validation_problem_count = 10000; 
+    const int test_problem_count = 100;
 
     const std::string train_problem_file = "TRAIN/rnd_JT(5)_J(15)_M(5)_JO(10-15)_O(20)_OM(2-5)_total.json"; // used to be test_problem_file
     const std::string validate_problem_file = "VALID/rnd_JT(5)_J(15)_M(5)_JO(10-15)_O(20)_OM(2-5)_validation.json";
@@ -121,12 +123,14 @@ int main(int argc, char *argv[])
 
     // --- TEST  ---
     try {
-        const int test_problem_count = 100;
+        // const int test_problem_count = 100;
 
-        JobShopGPUEvaluator test_evaluator(test_problem_file, topology, population_size, test_problem_count);
+        // JobShopGPUEvaluator test_evaluator(test_problem_file, topology, population_size, test_problem_count);
+        g_gpu_test_evaluator = new JobShopGPUEvaluator(test_problem_file, topology, population_size, test_problem_count);
 
         std::cout << "[TEST] Evaluating best weights on test set (" << test_problem_count << " problems)..." << std::endl;
-        float test_avg_makespan = test_evaluator.EvaluateForMinMakespan(best_weights, test_problem_count);
+
+        float test_avg_makespan = g_gpu_test_evaluator->EvaluateForMinMakespan(best_weights, test_problem_count);
 
         // save the test result
         std::ofstream test_result_file("best_test_result.csv");
@@ -144,11 +148,11 @@ int main(int argc, char *argv[])
             std::cerr << "[ERROR] Unable to open best_test_result.csv for writing!" << std::endl;
         }
 
-        // Save the makespan for each task in the test set
+/*         // Save the makespan for each task in the test set
         Eigen::MatrixXd single_candidate_matrix(best_weights.size(), 1);
         single_candidate_matrix.col(0) = best_weights;
 
-        Eigen::VectorXd test_makespans = test_evaluator.EvaluateCandidates(single_candidate_matrix, true);
+        Eigen::VectorXd test_makespans = g_gpu_test_evaluator->EvaluateCandidates(single_candidate_matrix, true);
 
         std::ofstream test_per_instance_file("test_per_instance_makespans.csv");
         if (test_per_instance_file.is_open()) {
@@ -160,7 +164,7 @@ int main(int argc, char *argv[])
             std::cout << "[TEST] Per-instance makespans saved to test_per_instance_makespans.csv" << std::endl;
         } else {
             std::cerr << "[ERROR] Unable to open test_per_instance_makespans.csv for writing!" << std::endl;
-        }
+        } */
     } catch (const std::exception& e) {
         std::cerr << "[ERROR][TEST] Exception during test evaluation: " << e.what() << std::endl;
     }
