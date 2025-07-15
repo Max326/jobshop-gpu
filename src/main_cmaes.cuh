@@ -1,6 +1,8 @@
 #include "customCMAES.hpp"
 #include "JobShopGPUEvaluator.cuh"
 #include <fstream>
+#include <filesystem>
+#include <regex>
 
 /*
 :0 will be used to mark OG Stanislaus's code regarding cmaes, 
@@ -14,6 +16,13 @@ JobShopGPUEvaluator* g_gpu_test_evaluator = nullptr;
 
 float best_val_makespan = std::numeric_limits<float>::max();
 Eigen::VectorXd best_weights; 
+
+inline std::string extract_dataset_name(const std::string& path) {
+    auto last_slash = path.find_last_of("/\\");
+    std::string filename = (last_slash == std::string::npos) ? path : path.substr(last_slash + 1);
+    static const std::regex suffix_re("(_total|_validation)?\\.json$");
+    return std::regex_replace(filename, suffix_re, "");
+}
 
 int main_cmaes(const std::string train_problem_file, const std::string validate_problem_file, const std::string test_problem_file, const int max_loaded_problems)
 {
@@ -35,13 +44,22 @@ int main_cmaes(const std::string train_problem_file, const std::string validate_
     FitFunc eval = [](const double *x, const int N) -> double { return 0.0; };
     ESOptimizer<customCMAStrategy,CMAParameters<>> optim(eval, cmaparams);
 
-    std::ofstream train_makespan_file("best_train_makespans.csv");
-    std::ofstream val_makespan_file("best_val_makespans.csv");
+    std::string dataset_name = extract_dataset_name(train_problem_file);
+    std::filesystem::path results_dir = std::filesystem::path("data") / "RESULTS" / dataset_name;
+    std::filesystem::create_directories(results_dir);
+
+    std::ofstream train_makespan_file((results_dir / "best_train_makespans.csv").string());
+    std::ofstream val_makespan_file((results_dir / "best_val_makespans.csv").string());
     train_makespan_file << "iteration,best_train_avg_makespan\n";
     val_makespan_file << "iteration,val_avg_makespan\n";
 
     int global_iter = 0;
     int problems_processed = 0;
+
+    if (g_gpu_validate_evaluator) {
+        delete g_gpu_validate_evaluator;
+    }
+    g_gpu_validate_evaluator = new JobShopGPUEvaluator(validate_problem_file, topology, population_size, validation_problem_count);
 
     while (problems_processed < train_problem_count) {
         int to_load = std::min(max_loaded_problems, train_problem_count - problems_processed);
@@ -123,7 +141,7 @@ int main_cmaes(const std::string train_problem_file, const std::string validate_
         float test_avg_makespan = g_gpu_test_evaluator->EvaluateForMinMakespan(best_weights, test_problem_count);
 
         // save the test result
-        std::ofstream test_result_file("best_test_result.csv");
+        std::ofstream test_result_file((results_dir / "best_test_result.csv").string());
         if (test_result_file.is_open()) {
             test_result_file << "avg_makespan," << test_avg_makespan << "\n";
             test_result_file << "weights,";
@@ -144,7 +162,7 @@ int main_cmaes(const std::string train_problem_file, const std::string validate_
 
         Eigen::VectorXd test_makespans = g_gpu_test_evaluator->EvaluateCandidates(single_candidate_matrix, true);
 
-        std::ofstream test_per_instance_file("test_per_instance_makespans.csv");
+        std::ofstream test_per_instance_file((results_dir / "test_per_instance_makespans.csv").string());
         if (test_per_instance_file.is_open()) {
             test_per_instance_file << "problem_id,makespan\n";
             for (int i = 0; i < test_makespans.size(); ++i) {

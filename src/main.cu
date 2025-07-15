@@ -41,13 +41,13 @@ std::vector<std::string> datasets = {
 int main(int argc, char *argv[]){
     int n = datasets.size();
 
-    int start_index = 0;
-    int ds_amount = 2; // Number of datasets to process in this run
+    int start_index = 1;
+    int ds_amount = 1; // Number of datasets to process in this run
 
-    const int max_loaded_problems = 130000;
+    int max_loaded_problems = 130000;
 
     for (int i = start_index; i < start_index + ds_amount && i < n; ++i) {
-        if (i >= 16) maxLoadedProblems -= 20000; // Adjust for larger datasets
+        if (i >= 16) max_loaded_problems -= 20000; // Adjust for larger datasets
 
         std::string train_problem_file = "TRAIN/" + datasets[i] + "_total.json";
         std::string validate_problem_file = "VALID/" + datasets[i] + "_validation.json";

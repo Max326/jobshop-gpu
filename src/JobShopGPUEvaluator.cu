@@ -4,7 +4,13 @@
 #include <cstring>
 #include <chrono>
 
-JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const std::vector<int>& nn_topology, const int &population_size, const int problem_count)
+JobShopGPUEvaluator::JobShopGPUEvaluator(
+    const std::string& problem_file,
+    const std::vector<int>& nn_topology,
+    const int &population_size,
+    const int problem_count,
+    int problem_offset,
+    int max_loaded_problems)
     : nn_topology_(nn_topology), nn_candidate_count_(population_size)
 {
     d_ops_working_ = nullptr;
@@ -82,6 +88,14 @@ JobShopGPUEvaluator::JobShopGPUEvaluator(const std::string& problem_file, const 
     CUDA_CHECK(cudaMalloc(&d_evaluators_, sizeof(NeuralNetwork::DeviceEvaluator) * nn_candidate_count_));
     CUDA_CHECK(cudaMemcpy(d_evaluators_, temp_host_evaluators.data(), sizeof(NeuralNetwork::DeviceEvaluator) * nn_candidate_count_, cudaMemcpyHostToDevice));
 }
+
+JobShopGPUEvaluator::JobShopGPUEvaluator(
+    const std::string& problem_file,
+    const std::vector<int>& nn_topology,
+    const int &population_size,
+    const int problem_count)
+    : JobShopGPUEvaluator(problem_file, nn_topology, population_size, problem_count, 0, problem_count)
+{}
 
 JobShopGPUEvaluator::~JobShopGPUEvaluator() {
     FreeProblemDataGPU();
