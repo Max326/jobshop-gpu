@@ -39,6 +39,8 @@ std::vector<std::string> datasets = {
 
 
 int main(int argc, char *argv[]){
+    //TODO reset min makespan for each dataset
+    
     int n = datasets.size();
 
     int start_index = 1;
