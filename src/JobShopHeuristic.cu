@@ -237,11 +237,13 @@ __global__ void SolveManyWeightsKernel(
 	float* shared_makespans = shared_block_data;
 
 	// --- Identify current weight set and problem for this thread ---
-	int weightSet = blockIdx.x;			  // Each block handles one weightSet
+	int evaluator_idx = validation_mode ? 0 : blockIdx.x; 
+	int weightSet = evaluator_idx;			  // Each block handles one weightSet
+	
 	int problemIdxInBlock = threadIdx.x;  // Each thread in block handles one FJSS problem for this weightSet
 
 	// --- Load NN Parameters into Shared Memory ---
-	const NeuralNetwork::DeviceEvaluator& nn_eval_global_ptr = evaluators[weightSet];  // Get the evaluator for this block
+	const NeuralNetwork::DeviceEvaluator& nn_eval_global_ptr = evaluators[evaluator_idx];  // Get the evaluator for this block
 
 	// Partition 2: Storage for NN weights for this block (starts after shared_makespans)
 	float* sm_weights = shared_block_data + blockDim.x;

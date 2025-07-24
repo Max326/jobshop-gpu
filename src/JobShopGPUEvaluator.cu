@@ -279,7 +279,7 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
 
     float* d_results = nullptr;
     int result_count = nn_candidate_count;
-    if (validation_mode) result_count = 1; // tylko jeden kandydat
+    // if (validation_mode) result_count = 1; // tylko jeden kandydat
 
     CUDA_CHECK(cudaMalloc(&d_results, sizeof(float) * result_count));
 
@@ -343,29 +343,25 @@ Eigen::VectorXd JobShopGPUEvaluator::EvaluateCandidates(const Eigen::MatrixXd& c
 }
 
 float JobShopGPUEvaluator::EvaluateForMinMakespan(const Eigen::VectorXd& candidate_weights, int num_problems) {
-    const int val_batch_size = 1000;
-    int num_batches = (num_problems + val_batch_size - 1) / val_batch_size;
-    float makespan_sum = 0.0f;
-    int makespan_count = 0;
-
-    for (int batch = 0; batch < num_batches; ++batch) {
-        int batch_start = batch * val_batch_size;
-        int batch_size = std::min(val_batch_size, num_problems - batch_start);
-
-        if (!SetCurrentBatch(batch_start, batch_size)) {
-            std::cerr << "[ERROR] Could not set batch for validation." << std::endl;
-            continue;
-        }
-
-        Eigen::MatrixXd replicated_candidate_matrix(nn_total_params_, 1); // 1 candidate
-        replicated_candidate_matrix.col(0) = candidate_weights;
-        Eigen::VectorXd result_vector = EvaluateCandidates(replicated_candidate_matrix, true);
-
-        makespan_sum += result_vector[0];
-        makespan_count++;
+    // 1. Load the entire set of validation problems onto the GPU at once.
+    if (!SetCurrentBatch(0, num_problems)) {
+        std::cerr << "[ERROR] Could not set the full batch for validation." << std::endl;
+        return std::numeric_limits<float>::max();
     }
 
-    if (makespan_count > 0)
-        return makespan_sum / makespan_count;
+    // 2. Prepare the matrix for the single best candidate network.
+    Eigen::MatrixXd replicated_candidate_matrix(nn_total_params_, 1); // Only 1 candidate
+    replicated_candidate_matrix.col(0) = candidate_weights;
+
+    // 3. Evaluate the candidate. In validation mode, this now returns a vector
+    //    containing the makespan for every problem that was evaluated.
+    Eigen::VectorXd all_makespans = EvaluateCandidates(replicated_candidate_matrix, true);
+
+    // 4. Calculate the true average makespan over all results.
+    if (all_makespans.size() > 0) {
+        return all_makespans.sum() / all_makespans.size();
+    }
+
+    // Return a fallback value if no results were produced.
     return std::numeric_limits<float>::max();
 }

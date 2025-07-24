@@ -33,11 +33,13 @@ int main_cmaes(const std::string train_problem_file, const std::string validate_
     const int validation_problem_count = 10000; 
     const int test_problem_count = 100;
 
-    int population_size = 192;
+    const int train_population_size = 192;
+    const int valid_and_test_population_size = 1;
+    
     int nn_weights_count = NeuralNetwork::CalculateTotalParameters(topology);
     std::vector<double> x0(nn_weights_count, 0.0);
     double sigma = 0.1;
-    CMAParameters<> cmaparams(x0, sigma, population_size);  
+    CMAParameters<> cmaparams(x0, sigma, train_population_size);  
     cmaparams.set_sep();
     cmaparams.set_algo(sepaCMAES);
 
@@ -59,13 +61,13 @@ int main_cmaes(const std::string train_problem_file, const std::string validate_
     if (g_gpu_validate_evaluator) {
         delete g_gpu_validate_evaluator;
     }
-    g_gpu_validate_evaluator = new JobShopGPUEvaluator(validate_problem_file, topology, population_size, validation_problem_count);
+    g_gpu_validate_evaluator = new JobShopGPUEvaluator(validate_problem_file, topology, valid_and_test_population_size, validation_problem_count);
 
     while (problems_processed < train_problem_count) {
         int to_load = std::min(max_loaded_problems, train_problem_count - problems_processed);
 
         // TODO memory allocation outside of the loop
-        JobShopGPUEvaluator gpu_evaluator(train_problem_file, topology, population_size, train_problem_count, problems_processed, to_load);
+        JobShopGPUEvaluator gpu_evaluator(train_problem_file, topology, train_population_size, train_problem_count, problems_processed, to_load);
         g_gpu_train_evaluator = &gpu_evaluator;
 
         int batch_start = 0;
@@ -75,13 +77,15 @@ int main_cmaes(const std::string train_problem_file, const std::string validate_
             optim.tell();//:0
             optim.inc_iter();//:0
 
-            train_makespan_file << global_iter << "," << optim.get_best_fvalue() << "\n";
+            float best_train_makespan = optim.get_best_fvalue();
+
+            train_makespan_file << global_iter << "," << best_train_makespan << "\n";
             train_makespan_file.flush();
 
             batch_start += batch_size;
             global_iter++;
 
-            std::cout << "Global iterations: " << global_iter << std::endl;
+            std::cout << "Global iterations: " << global_iter << ", best train makespan: " << best_train_makespan << std::endl;
 
             // --- VALIDATE  ---
             if (global_iter % 10 == 0) {
@@ -133,8 +137,8 @@ int main_cmaes(const std::string train_problem_file, const std::string validate_
 
     // --- TEST  ---
     try {
-        // JobShopGPUEvaluator test_evaluator(test_problem_file, topology, population_size, test_problem_count);
-        g_gpu_test_evaluator = new JobShopGPUEvaluator(test_problem_file, topology, population_size, test_problem_count);
+        // JobShopGPUEvaluator test_evaluator(test_problem_file, topology, train_population_size, test_problem_count);
+        g_gpu_test_evaluator = new JobShopGPUEvaluator(test_problem_file, topology, valid_and_test_population_size, test_problem_count);
 
         std::cout << "[TEST] Evaluating best weights on test set (" << test_problem_count << " problems)..." << std::endl;
 
