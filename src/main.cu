@@ -43,7 +43,7 @@ int main(int argc, char *argv[]){
     
     int n = datasets.size();
 
-    int start_index = 1;
+    int start_index = 5;
     int ds_amount = 1; // Number of datasets to process in this run
 
     int max_loaded_problems = 130000;
