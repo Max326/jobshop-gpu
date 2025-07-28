@@ -17,13 +17,6 @@ JobShopGPUEvaluator* g_gpu_test_evaluator = nullptr;
 float best_val_makespan = std::numeric_limits<float>::max();
 Eigen::VectorXd best_weights; 
 
-inline std::string extract_dataset_name(const std::string& path) {
-    auto last_slash = path.find_last_of("/\\");
-    std::string filename = (last_slash == std::string::npos) ? path : path.substr(last_slash + 1);
-    static const std::regex suffix_re("(_total|_validation)?\\.json$");
-    return std::regex_replace(filename, suffix_re, "");
-}
-
 int main_cmaes(const std::string problem_file, const int max_loaded_problems)
 {
     // --- CONFIG ---
@@ -46,11 +39,11 @@ int main_cmaes(const std::string problem_file, const int max_loaded_problems)
     FitFunc eval = [](const double *x, const int N) -> double { return 0.0; };
     ESOptimizer<customCMAStrategy,CMAParameters<>> optim(eval, cmaparams);
 
-    const std::string train_problem_file = "TRAIN/" + problem_file + "_total.json"; // TODO make nicer
+    const std::string train_problem_file = "TRAIN/" + problem_file + "_total.json";
     const std::string validate_problem_file = "VALID/" + problem_file + "_validation.json";
     const std::string test_problem_file = "TEST/" + problem_file + "_test.json";
 
-    std::string dataset_name = extract_dataset_name(train_problem_file);
+    const std::string dataset_name = problem_file;
     std::filesystem::path results_dir = std::filesystem::path("data") / "RESULTS" / dataset_name;
     std::filesystem::create_directories(results_dir);
 
