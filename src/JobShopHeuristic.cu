@@ -385,7 +385,6 @@ __global__ void SolveManyWeightsKernel(
                         }
 						features[startIndex + operation.type] = ScaleTanh2(static_cast<float>(opTypeCount[operation.type] - 1));
 
-
 						// --features[totOpLeftStart + operation.type]; // because we score for the operation as if it was processed 
                         //* total number of operations left (of each type) - end
 

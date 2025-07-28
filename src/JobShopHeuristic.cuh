@@ -19,9 +19,9 @@
 #include "NeuralNetwork.cuh"
 
 #define MAX_MACHINES 5	 // TODO: make this dynamic
-#define MAX_JOB_TYPES 15
-#define MAX_JOBS	 30
-#define MAX_OPS		 15
+#define MAX_JOB_TYPES 10
+#define MAX_JOBS	 15
+#define MAX_OPS		 20
 #define MAX_OP_TYPES 20
 
 // Structure for scheduled operation
@@ -60,8 +60,6 @@ public:
         void FromGPU(const SolutionManager::GPUSolutions& gpuSol, int problemId);
         SolutionManager::GPUSolutions ToGPU() const;
     };
-
-    CPUSolution Solve(const JobShopData& data);
 
     JobShopHeuristic(const std::vector<int>& topology);
     JobShopHeuristic(const std::string& filename);

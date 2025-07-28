@@ -24,10 +24,10 @@ inline std::string extract_dataset_name(const std::string& path) {
     return std::regex_replace(filename, suffix_re, "");
 }
 
-int main_cmaes(const std::string train_problem_file, const std::string validate_problem_file, const std::string test_problem_file, const int max_loaded_problems)
+int main_cmaes(const std::string problem_file, const int max_loaded_problems)
 {
     // --- CONFIG ---
-    const std::vector<int> topology = {86, 32, 16, 1};
+    const std::vector<int> topology = {81, 32, 16, 1};
     const int batch_size = 50;
     const int train_problem_count = 130000; //130k --> 2600 iterations
     const int validation_problem_count = 10000; 
@@ -45,6 +45,10 @@ int main_cmaes(const std::string train_problem_file, const std::string validate_
 
     FitFunc eval = [](const double *x, const int N) -> double { return 0.0; };
     ESOptimizer<customCMAStrategy,CMAParameters<>> optim(eval, cmaparams);
+
+    const std::string train_problem_file = "TRAIN/" + problem_file + "_total.json"; // TODO make nicer
+    const std::string validate_problem_file = "VALID/" + problem_file + "_validation.json";
+    const std::string test_problem_file = "TEST/" + problem_file + "_test.json";
 
     std::string dataset_name = extract_dataset_name(train_problem_file);
     std::filesystem::path results_dir = std::filesystem::path("data") / "RESULTS" / dataset_name;

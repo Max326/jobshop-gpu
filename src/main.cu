@@ -43,7 +43,7 @@ int main(int argc, char *argv[]){
     
     int n = datasets.size();
 
-    int start_index = 5;
+    int start_index = 1;
     int ds_amount = 1; // Number of datasets to process in this run
 
     int max_loaded_problems = 130000;
@@ -52,11 +52,7 @@ int main(int argc, char *argv[]){
         // if (i == 1 || i == 5){   
         if (i >= 16) max_loaded_problems -= 20000; // Adjust for larger datasets
         
-        std::string train_problem_file = "TRAIN/" + datasets[i] + "_total.json";
-        std::string validate_problem_file = "VALID/" + datasets[i] + "_validation.json";
-        std::string test_problem_file = "TEST/" + datasets[i] + "_test.json";
-        
-        main_cmaes(train_problem_file, validate_problem_file, test_problem_file, max_loaded_problems);
+        main_cmaes(datasets[i], max_loaded_problems);
         // }
     }
 
