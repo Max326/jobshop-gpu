@@ -21,7 +21,9 @@ Begin with dependencies:
 sudo apt-get install autoconf automake libtool libgoogle-glog-dev libgflags-dev libeigen3-dev
 ```
 
-Within libcmaes directory compile using: 
+Clone it from here <https://github.com/CMA-ES/libcmaes#>
+
+Build it without CMake within libcmaes directory, using:
 
 ```bash
 ./autogen.sh
