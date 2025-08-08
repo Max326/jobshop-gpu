@@ -1,4 +1,4 @@
-#include "../libcmaes/cmaes.h"
+#include "cmaes.h"
 #include <iostream>
 #include "JobShopGPUEvaluator.cuh" 
 

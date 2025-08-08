@@ -1,102 +1,87 @@
 cmake_minimum_required(VERSION 3.20)
+
+# Set the CUDA architecture globally before the project() call.
+# This is the most reliable way to avoid initialization errors.
+set(CMAKE_CUDA_ARCHITECTURES 75)
+
 project(JobShopScheduler LANGUAGES CXX CUDA)
 
-set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CUDA_STANDARD 17)
 
-# set(CMAKE_CXX_FLAGS_RELEASE "-O3")
-
-# Better CUDA flags for modern architectures
+# Add CUDA flags to resolve Eigen warnings and improve code generation.
+# --expt-relaxed-constexpr fixes the common Eigen/CUDA compatibility issue.
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr")
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --fmad=false --prec-div=true --prec-sqrt=true -lineinfo")
 
-# Source organization
-file(GLOB_RECURSE CUDA_SOURCES
-    src/*.cu
+# --- Source File Organization ---
+file(GLOB_RECURSE CUDA_SOURCES "src/*.cu")
+file(GLOB_RECURSE CPP_SOURCES "src/*.cpp")
+file(GLOB_RECURSE HEADER_SOURCES "src/*.h" "src/*.hpp" "src/*.cuh")
+
+# --- Dependency: libcmaes (Modern Approach) ---
+# Define the root path for the adjacent libcmaes project.
+set(LIBCMAES_ROOT "${CMAKE_SOURCE_DIR}/../libcmaes")
+
+# Find the pre-built libcmaes library file (.so or .a).
+find_library(
+    LIBCMAES_LIBRARY
+    NAMES cmaes libcmaes
+    HINTS "${LIBCMAES_ROOT}/src/.libs"
+    DOC "Path to the libcmaes library file"
 )
 
-file(GLOB_RECURSE CPP_SOURCES
-    src/*.cpp
-)
-
-file(GLOB_RECURSE HEADER_SOURCES
-    src/*.h
-    src/*.hpp
-    src/*.cuh
-)
-
-# General include for Eigen3 (remains unchanged)
-include_directories("/usr/include/eigen3")
-
-# ------------------- LIBCMAES Configuration Start -------------------
-# Define the root directory of your pre-built libcmaes
-# ${CMAKE_SOURCE_DIR} is Projects/jobshop-gpu/
-set(LIBCMAES_EXTERNAL_ROOT "${CMAKE_SOURCE_DIR}/../libcmaes")
-
-# Find the libcmaes static library
-find_library(LIBCMAES_LIBRARY_FILE
-             NAMES cmaes libcmaes # CMake will search for libcmaes.a or cmaes.a
-             HINTS "${LIBCMAES_EXTERNAL_ROOT}/src/.libs"
-             NO_DEFAULT_PATH) # Only search in the specified HINTS path
-
-if(NOT LIBCMAES_LIBRARY_FILE)
-    message(FATAL_ERROR "libcmaes library (.a) not found in ${LIBCMAES_EXTERNAL_ROOT}/src/.libs. "
-                        "Please ensure libcmaes is built there (run make in Projects/libcmaes) and the path is correct.")
-endif()
-message(STATUS "Found pre-built libcmaes library: ${LIBCMAES_LIBRARY_FILE}")
-
-# Define the include directories for libcmaes
-# These will be associated with the imported target.
+# Define the include directories needed for libcmaes.
 set(LIBCMAES_INCLUDE_DIRS
-    "${LIBCMAES_EXTERNAL_ROOT}/include"
-    "${LIBCMAES_EXTERNAL_ROOT}/include/libcmaes" # Keep both as per your original setup
+    "${LIBCMAES_ROOT}/include"
+    "${LIBCMAES_ROOT}/include/libcmaes"
 )
 
-# Verify include paths exist (optional, good for debugging)
-foreach(include_dir ${LIBCMAES_INCLUDE_DIRS})
-    if(NOT IS_DIRECTORY ${include_dir})
-        message(WARNING "libcmaes include directory not found: ${include_dir}")
-    else()
-        message(STATUS "Found libcmaes include directory: ${include_dir}")
-    endif()
-endforeach()
+# Stop with an error if the library wasn't found.
+if(NOT LIBCMAES_LIBRARY)
+    message(FATAL_ERROR "libcmaes library not found in ${LIBCMAES_ROOT}/src/.libs. "
+                        "Please ensure libcmaes is built.")
+endif()
+message(STATUS "Found libcmaes library: ${LIBCMAES_LIBRARY}")
 
-# Create an IMPORTED target for libcmaes
-add_library(cmaes_external STATIC IMPORTED) # You can make it GLOBAL if needed across subdirectories
+# Create an IMPORTED target. This bundles the library location and its include
+# directories into a single, modern CMake target.
+add_library(cmaes_external UNKNOWN IMPORTED)
 set_target_properties(cmaes_external PROPERTIES
-    IMPORTED_LOCATION "${LIBCMAES_LIBRARY_FILE}"
-    INTERFACE_INCLUDE_DIRECTORIES "${LIBCMAES_INCLUDE_DIRS}" # Semicolon-separated list
+    IMPORTED_LOCATION "${LIBCMAES_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${LIBCMAES_INCLUDE_DIRS}"
 )
-# -------------------- LIBCMAES Configuration End --------------------
 
-# CXX Flags for JobShopScheduler project
-set(CMAKE_CXX_FLAGS "-O3") # Your base CXX flags for this project
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DNDEBUG") # Note: NDEBUG usually for release
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native") # Add march=native
+# --- Dependency: Eigen3 ---
+# Find Eigen3 using CMake's built-in capabilities.
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
-# OpenMP configuration (remains unchanged)
+# --- Dependency: OpenMP ---
 find_package(OpenMP)
-if (OPENMP_FOUND)
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+if(OPENMP_FOUND)
+    message(STATUS "OpenMP found, enabling flags.")
+else()
+    message(WARNING "OpenMP not found.")
 endif()
 
-# Main executable
+# --- Main Executable Target ---
 add_executable(JobShopScheduler
     ${CPP_SOURCES}
     ${CUDA_SOURCES}
-    ${HEADER_SOURCES})
-
-# CUDA specific settings (remains unchanged)
-set_property(TARGET JobShopScheduler PROPERTY CUDA_SEPARABLE_COMPILATION ON)
-set_property(TARGET JobShopScheduler PROPERTY CUDA_ARCHITECTURES 75)
-
-# Includes for JobShopScheduler sources (remains unchanged)
-target_include_directories(JobShopScheduler PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${HEADER_SOURCES}
 )
 
-# JSON library (remains unchanged)
+# --- Target-Specific Properties ---
+# Enable separable compilation for CUDA.
+set_property(TARGET JobShopScheduler PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+
+# Add include directories for your own source code and Eigen.
+target_include_directories(JobShopScheduler PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${EIGEN3_INCLUDE_DIRS}
+)
+
+# --- Dependency: nlohmann_json (via FetchContent) ---
 include(FetchContent)
 FetchContent_Declare(
     json
@@ -105,12 +90,21 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(json)
 
-# Modified linking: link against the imported cmaes_external target
+# --- Linking Stage ---
+# Link all libraries to the executable. Linking to 'cmaes_external' will
+# also automatically add its required include directories.
 target_link_libraries(JobShopScheduler PRIVATE
     nlohmann_json::nlohmann_json
-    cmaes_external # Link against the imported libcmaes target
+    cmaes_external
+    OpenMP::OpenMP_CXX
 )
 
-# Data files (remains unchanged)
-file(COPY ${CMAKE_SOURCE_DIR}/data DESTINATION ${CMAKE_BINARY_DIR})
+# --- RPATH Configuration for Runtime ---
+# Embed the library's path into the executable so the system can find
+# libcmaes.so at runtime, avoiding the "cannot open shared object file" error.
+set_target_properties(JobShopScheduler PROPERTIES
+    INSTALL_RPATH "$<TARGET_FILE_DIR:cmaes_external>"
+)
 
+# --- Data Files ---
+file(COPY "${CMAKE_SOURCE_DIR}/data" DESTINATION "${CMAKE_BINARY_DIR}")
